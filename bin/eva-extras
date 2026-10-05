@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""eva-extras: install the desk's look for kitty, starship, neovim, firefox, discord, spotify, the shell."""
+"""eva-extras: install the desk's look for kitty, starship, neovim and the shell."""
 import os
 import runpy
 import sys

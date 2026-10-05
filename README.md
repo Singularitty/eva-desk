@@ -103,7 +103,7 @@ script, turn them off, or disable eva-desk's with `[bar] enabled = false` and `[
 
 | flag | |
 |---|---|
-| `--extras all` | also theme kitty, starship, Neovim, Firefox, Discord, Spotify and the shell. A list works too: `--extras kitty,starship` |
+| `--extras all` | also theme kitty, starship, Neovim and the shell. A list works too: `--extras kitty,starship` |
 | `--lock` | set up hyprlock: a background per monitor and a `hyprlock.conf` |
 | `--gtk` | build the GTK 3 / 4 theme and icon theme. Thunar gets its own stylesheet. Needs an Everforest GTK theme installed to recolour |
 | `--link` | run from the git checkout instead of a copy, handy for hacking on it |
@@ -180,16 +180,13 @@ to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig
 
 ## Other apps
 
-`eva-extras install kitty starship nvim firefox discord spotify shell`, or `all`, writes matching themes for:
+`eva-extras install kitty starship nvim shell`, or `all`, writes matching themes for:
 
 | | what | needs |
 |---|---|---|
 | kitty | colours and a tab bar with numbered title blocks | `include ./eva.conf` and `tab_bar_style custom` in kitty.conf |
 | starship | a prompt in the same style: git branch, command time, clock, and a warning block after a failed command | starship |
 | nvim | colorscheme, status line, tab colours and dashboard | AstroNvim with heirline and snacks, or just the colorscheme |
-| firefox | userChrome and userContent: tabs, url bar, menus, new tab page | restart Firefox |
-| discord | a theme | [Vencord](https://vencord.dev) |
-| spotify | a theme | [spicetify](https://spicetify.app) |
 | shell | zsh highlighting colours and a vivid theme for `ls` | source the file from `.zshrc` |
 
 Every file it writes gets a backup next to it.

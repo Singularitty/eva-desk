@@ -5,7 +5,7 @@
 #   ./install.sh --no-hypr   do not touch hyprland.lua (add the dofile line yourself)
 #   ./install.sh --no-fonts  skip the font download (Shippori Mincho B1, Share Tech Mono, Doto, Rubik and friends)
 #   ./install.sh --theme NAME      start with another theme from eva_desk/themes.py (default: eva)
-#   ./install.sh --extras all      also theme kitty, starship, neovim, firefox, discord, spotify, the shell
+#   ./install.sh --extras all      also theme kitty, starship, neovim and the shell
 #                                  (or a comma list: --extras kitty,starship); see `eva-extras list`
 #   ./install.sh --lock            set up hyprlock (SEELE council backgrounds per monitor + hyprlock.conf)
 #   ./install.sh --gtk             build the GTK + icon themes (needs an Everforest GTK/icon theme installed)

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""eva-desk extras: the same look for the apps around the desk (kitty, starship, neovim, firefox, discord,
-spotify, the shell). The files under extras/ are written for the eva theme; installing for another theme from themes.py
+"""eva-desk extras: the same look for the apps around the desk (kitty, starship, neovim, the shell). The files under extras/ are written for the eva theme; installing for another theme from themes.py
 rewrites their colours role by role (themes.retheme).
 
   eva-extras list
-  eva-extras install [--theme eva|vibe] kitty starship nvim firefox discord spotify shell | all
+  eva-extras install [--theme NAME] kitty starship nvim shell | all
   eva-extras paths                         where each extra goes on this machine
 
 Every file written gets a backup next to it (*.bak-eva-<date>) and is added to eva.toml's
 retheme_files, so `eva-ctl theme` keeps it in step afterwards.
 """
-import glob
 import os
 import re
 import shutil
@@ -29,43 +27,14 @@ CONF = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 
 
-def firefox_profile():
-    """The default Firefox profile folder (XDG or classic layout), or None."""
-    for base in (CONF / "mozilla" / "firefox", HOME / ".mozilla" / "firefox"):
-        ini = base / "profiles.ini"
-        if ini.exists():
-            text = ini.read_text()
-            # Install section wins, else the first Default=1 profile, else the first Path=
-            m = re.search(r"\[Install[^\]]*\][^\[]*?Default=(.+)", text)
-            paths = [m.group(1).strip()] if m else []
-            paths += re.findall(r"Path=(.+)", text)
-            for p in paths:
-                p = p.strip()
-                cand = base / p if not p.startswith("/") else Path(p)
-                if cand.is_dir():
-                    return cand
-        hits = sorted(glob.glob(str(base / "*" / "places.sqlite")))
-        if hits:
-            return Path(hits[0]).parent
-    return None
-
-
 def targets():
     """{extra: [(source under extras/, destination, mode)]}; mode: text (rethemed) or copy."""
-    ff = firefox_profile()
     return {
         "kitty": [("kitty/colors.conf", CONF / "kitty" / "eva.conf", "text"),
                   ("kitty/tab_bar.py", CONF / "kitty" / "tab_bar.py", "text")],
         "starship": [("starship/starship.toml", CONF / "starship.toml", "text")],
         "nvim": [("nvim/colors/eva.lua", CONF / "nvim" / "colors" / "eva.lua", "text"),
                  ("nvim/plugins/eva-ui.lua", CONF / "nvim" / "lua" / "plugins" / "eva-ui.lua", "text")],
-        "firefox": ([("firefox/chrome/userChrome.css", ff / "chrome" / "userChrome.css", "text"),
-                     ("firefox/chrome/userContent.css", ff / "chrome" / "userContent.css", "text"),
-                     ("firefox/chrome/eva.png", ff / "chrome" / "eva.png", "copy"),
-                     ("firefox/user.js", ff / "user.js", "append")] if ff else []),
-        "discord": [("discord/eva.theme.css", CONF / "Vencord" / "themes" / "eva.theme.css", "text")],
-        "spotify": [("spotify/Eva/color.ini", CONF / "spicetify" / "Themes" / "Eva" / "color.ini", "text"),
-                    ("spotify/Eva/user.css", CONF / "spicetify" / "Themes" / "Eva" / "user.css", "text")],
         "shell": [("shell/eva.zsh", CONF / "zsh" / "eva.zsh", "text"),
                   ("shell/vivid.yml", CONF / "vivid" / "themes" / "eva.yml", "text")],
     }
@@ -75,9 +44,6 @@ NOTES = {
     "kitty": "add to kitty.conf:  include ./eva.conf   and   tab_bar_style custom   (tab_bar.py sits next to it)",
     "starship": "the prompt is the whole starship.toml; starship reads it on the next prompt",
     "nvim": "AstroNvim: colorscheme = \"eva\" in astroui opts; plugins/eva-ui.lua is picked up by lazy. Other setups: :colorscheme eva",
-    "firefox": "restart Firefox (user.js enables userChrome; the chrome/ folder is in your profile)",
-    "discord": "needs Vencord (vencord.dev); enable the theme in Settings > Vencord > Themes",
-    "spotify": "needs spicetify-cli; then: spicetify config current_theme Eva color_scheme eva && spicetify backup apply",
     "shell": "zsh: source ~/.config/zsh/eva.zsh at the end of .zshrc; LS_COLORS via vivid (optional)",
 }
 
@@ -118,9 +84,6 @@ def install(names, theme_name, dry=False):
     for name in names:
         if name not in t:
             print(f"unknown extra: {name} (have: {', '.join(t)})", file=sys.stderr)
-            continue
-        if not t[name]:
-            print(f"{name}: no Firefox profile found, skipped", file=sys.stderr)
             continue
         for rel, dst, mode in t[name]:
             src = EXTRAS / rel
