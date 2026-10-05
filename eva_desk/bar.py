@@ -61,17 +61,46 @@ class Bar:
         self.win.set_visible(on)
 
     # ---------------------------------------------------------------- drawing
+    _dot_cache = {}
+
+    def _dots(self, u):
+        """A repeating halftone tile: one purple dot per 7 px cell, cached per bar scale."""
+        import cairo
+        key = round(u, 3)
+        if key not in self._dot_cache:
+            step = max(4, int(round(7 * u)))
+            tile = cairo.ImageSurface(cairo.FORMAT_ARGB32, step, step)
+            tc = cairo.Context(tile)
+            d.rgba(tc, d.CLARET, 0.28)
+            tc.arc(step / 2, step / 2, max(0.8, 1.1 * u), 0, 6.2832)
+            tc.fill()
+            pat = cairo.SurfacePattern(tile)
+            pat.set_extend(cairo.EXTEND_REPEAT)
+            self._dot_cache[key] = pat
+        return self._dot_cache[key]
+
     def _draw(self, area, cr, w, h):
         u = h / 56
         th = 40 * u
         y = (h - th) / 2 - 2 * u
         self.hits = []
         st = self.state
-        ground = float(self.cfg["bar"].get("opacity", 0.94))
+        ground = float(self.cfg["bar"].get("opacity", 0.8))
+        motif = str(self.cfg["bar"].get("motif", "both"))
         if ground > 0:                                   # the bar's own ground, so it reads on any wallpaper
             d.rgba(cr, d.INK, ground)
             cr.rectangle(0, 0, w, h)
             cr.fill()
+        if motif in ("dots", "both"):                    # the halftone screen, purple on ink
+            cr.save()
+            cr.rectangle(0, 0, w, h - 3 * u)
+            cr.clip()
+            cr.set_source(self._dots(u))
+            cr.paint()
+            cr.restore()
+        if motif in ("hazard", "both"):                  # the stage band along the bottom edge
+            d.hazard(cr, 0, h - 3 * u, w, 3 * u, d.CLARET, d.col("ink4"), period=14 * u)
+        elif ground > 0:
             d.rgba(cr, d.col("ink4"), min(1.0, ground + 0.06))
             cr.rectangle(0, h - 2 * u, w, 2 * u)
             cr.fill()

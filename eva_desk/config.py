@@ -52,6 +52,7 @@ DEFAULTS = {
         "enabled": True,
         "height": 56,
         "opacity": 0.8,           # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid); Hyprland blurs behind it
+        "motif": "both",          # dots (halftone screen) | hazard (the stripe along the bottom) | both | none
         "workspaces": 10,
         "hide_on_workspaces": [],
         "resources": ["cpu", "mem", "net"],   # resource tags left of the date; [] hides them

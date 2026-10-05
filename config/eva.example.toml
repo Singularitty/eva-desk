@@ -49,6 +49,7 @@ pool = []                 # e.g. ["~/Wallpapers/eva/unit01.png", "~/Wallpapers/e
 enabled = true
 height = 56
 opacity = 0.8             # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid); blurred behind by Hyprland
+motif = "both"            # dots (halftone screen) | hazard (the stripe along the bottom) | both | none
 workspaces = 10
 hide_on_workspaces = []   # named workspaces where the bar steps aside
 resources = ["cpu", "mem", "net"]   # CPU % / used RAM / network download tags left of the date; [] hides them
