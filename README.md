@@ -31,7 +31,7 @@ It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the class
 **The figure.** Unit-01 stands to the right of your windows, on a hexagon field. It appears when the first
 window on a workspace opens, then stays still. `Super+D` docks a window into its space, `Super+Shift+B` hides it.
 
-<p align="center"><img src="docs/eva-herald.png" alt="the herald" width="100%"></p>
+<p align="center"><img src="docs/eva-herald.png" alt="maximised window backdrop" width="100%"></p>
 
 **Maximise.** `Super+Return` fills the screen with the window, and a large Unit-01 fades in behind it.
 
