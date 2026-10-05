@@ -205,14 +205,14 @@ pair it with hypridle if you want it on idle.
 
 ## Resource use
 
-Measured on the daemon at idle with a 3440x1440 main monitor, after an hour of use:
+Measured on the daemon at idle with a 3440x1440 main monitor:
 
 | | |
 |---|---|
 | CPU, idle | about 0.4 % of one core (the bar's readouts refresh every 2 s; nothing else runs between events) |
 | CPU, during an effect | a short spike while a texture renders, then back to idle. Animations run on the GPU through GTK |
-| RAM | about 450 MB resident. Most of that is pictures kept ready at your monitor's size (backdrops, the launcher, the overlays); a 1080p screen needs roughly a third of it |
-| GPU memory | about 270 MB, for the same textures |
+| RAM | about 270 MB resident: GTK, the fonts, and the figure's backdrop kept ready at your monitor's size. Overlays and the launcher render when they open and are dropped when they close |
+| GPU memory | about 100 MB at rest; a full-screen effect adds one texture while it is on screen |
 | Disk | 9 MB for the program and pictures, plus 30 MB of fonts |
 
 The daemon is a single Python process. It wakes up on Hyprland events (workspace, window, focus) and on

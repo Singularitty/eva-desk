@@ -97,6 +97,8 @@ class Launcher:
 
     def hide(self):
         self.win.set_visible(False)
+        self.bg.set_paintable(None)
+        self.bg_size = None
         for attr in ("blink_id", "idle_id"):
             if getattr(self, attr, None) is not None:
                 GLib.source_remove(getattr(self, attr))

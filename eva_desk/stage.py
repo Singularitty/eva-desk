@@ -126,15 +126,18 @@ class Stage:
         if scene is None:
             self._stop_anim()
             self.win.set_visible(False)
+            self.drop(keep=("figure_back", "glow"))         # the figure's backdrop stays warm; the rest goes
             return
         f = self.cfg["figures"]
         if scene == "herald":
+            self.drop(keep=("herald_back",))
             self.texture("herald_back", wait=True)
             if herald_fresh:
                 self._start_anim("herald", f["herald_ms"])
             else:
                 self._stop_anim()
         elif scene == "figure":
+            self.drop(keep=("figure_back", "glow"))
             self.texture("figure_back", wait=True)
             self.texture("glow", wait=True)
             if impact:

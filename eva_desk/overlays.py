@@ -252,6 +252,12 @@ class _Overlay:
     def hide(self):
         self._stop()
         self.win.set_visible(False)
+        self.release()
+
+    def release(self):
+        """Drop the full-screen textures: they are cheap to render again and expensive to keep."""
+        if hasattr(self, "tex"):
+            self.tex = {} if isinstance(self.tex, dict) else None
 
     def animate(self, ms, on_done=None):
         self._stop()
@@ -408,6 +414,7 @@ class AlarmBand:
     def hide(self):
         self.ov.hide()
         self.note = None
+        self.tex = None
 
     def _paint(self, snap, w, h):
         if not self.tex:
