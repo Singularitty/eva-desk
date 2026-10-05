@@ -24,6 +24,8 @@ something is wrong. Nothing animates for long. Every effect is a single cut or p
 
 It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
 
+<p align="center"><img src="docs/demo.gif" alt="the figure entering a workspace, then a workspace switch" width="100%"></p>
+
 ## Features
 
 <p align="center"><img src="docs/eva-stage.png" alt="Unit-01 on the stage" width="100%"></p>
