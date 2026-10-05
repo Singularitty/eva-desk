@@ -27,30 +27,59 @@ It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the class
 
 ## Features
 
-| | |
-|---|---|
-| ![](docs/eva-stage.png) | ![](docs/eva-launcher.png) |
-| **The stage.** Unit-01 stands on an A.T. field to the right of your windows. It enters when the first window on a workspace opens, then stays put. `Super+D` docks a window into its space, `Super+Shift+B` hides it. | **The launcher** (`Super+Space`). What you type becomes an episode title, the matches are the cast list, the selected app sits on a monolith. |
-| ![](docs/eva-alttab.png) | ![](docs/eva-power.png) |
-| **Alt+Tab.** One card per window, most recent first. Release Alt to jump. | **Super+M.** Lock, sleep, log out, reboot, shut down. The cross of light plays when you confirm; shutting down asks twice. |
-| ![](docs/eva-lock.png) | ![](docs/eva-login.png) |
-| **Lock screen** for hyprlock. One picture per monitor. | **Login screen** for greetd + ReGreet. |
+<p align="center"><img src="docs/eva-stage.png" alt="Unit-01 on the stage" width="100%"></p>
 
-<p align="center"><img src="docs/eva-bar.png" alt="the bar" width="100%"></p>
+**The stage.** Unit-01 stands on an A.T. field to the right of your windows. It enters when the first
+window on a workspace opens, then stays put. `Super+D` docks a window into its space, `Super+Shift+B` hides it.
 
-The rest, in short:
+<p align="center"><img src="docs/eva-herald.png" alt="the herald" width="100%"></p>
 
-- **Bar**: workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
-  workspace is urgent or the CPU is pegged it switches to an orange EMERGENCY strip.
-- **Herald**: maximise a window (`Super+Return`) and a giant Unit-01 rises behind it.
-- **Screenshots** (`Print`): the screen freezes, you pick a region or a window, it goes to the clipboard and
-  to `~/Pictures/Screenshots`.
+**The herald.** Maximise a window (`Super+Return`) and a giant Unit-01 rises behind it.
+
+<p align="center"><img src="docs/eva-launcher.png" alt="the launcher" width="100%"></p>
+
+**The launcher** (`Super+Space`). What you type becomes an episode title, the matches are the cast list,
+the selected app sits on a monolith.
+
+<p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
+
+**Alt+Tab.** One card per window, most recent first. Release Alt to jump.
+
+<p align="center"><img src="docs/eva-power.png" alt="the power menu" width="100%"></p>
+
+**Super+M.** Lock, sleep, log out, reboot, shut down. The cross of light plays when you confirm; shutting
+down asks twice.
+
+<p align="center"><img src="docs/eva-bar.png" alt="the bar, calm and in EMERGENCY" width="100%"></p>
+
+**The bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume.
+When a workspace is urgent or the CPU is pegged it switches to an orange EMERGENCY strip (second row).
+
+<p align="center"><img src="docs/eva-eyecatch.png" alt="the workspace card" width="100%"></p>
+
+**The workspace card.** Switching workspaces shows the episode number for a moment, then fades.
+
+<p align="center"><img src="docs/eva-shot.png" alt="the screenshot tool" width="100%"></p>
+
+**Screenshots** (`Print`). The screen freezes, you pick a region or a window, it goes to the clipboard and
+to `~/Pictures/Screenshots`.
+
+<p align="center"><img src="docs/eva-lock.png" alt="the lock screen" width="100%"></p>
+
+**Lock screen** for hyprlock. One picture per monitor.
+
+<p align="center"><img src="docs/eva-login.png" alt="the login screen" width="100%"></p>
+
+**Login screen** for greetd + ReGreet.
+
+And the rest, in short:
+
 - **Wallpapers**: eleven scenes from the show (Unit-01 and the moon, Lilith, Ramiel over Tokyo-3, the cross,
   Sachiel, the Lance, the A.T. field, the train, the Geofront, the entry plug), one per workspace, shuffled.
 - **Windows**: square corners, a slowly rotating lilac border, a hard purple shadow.
-- **Small things**: a workspace switch shows the episode number for a moment. A critical notification drops
-  a band under the bar. A new window gets one hexagon pulse. The clock digits slide at the minute. After
-  thirty seconds of a maxed-out CPU the stage turns orange until it cools down.
+- **Small things**: a critical notification drops a band under the bar. A new window gets one hexagon pulse.
+  The clock digits slide at the minute. After thirty seconds of a maxed-out CPU the stage turns orange until
+  it cools down.
 
 Your own keybinds are left alone. eva-desk adds `Super+Return`, `Super+Shift+B` and `Super+D`, and takes
 over your launcher key, `Print`, `Alt+Tab` and `Super+M`. All of them can be changed or turned off.
