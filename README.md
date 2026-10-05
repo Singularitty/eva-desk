@@ -18,10 +18,9 @@
 ---
 
 eva-desk is a daemon that runs next to Hyprland and draws the desk: a bar, a launcher, a screenshot tool,
-wallpapers, and Unit-01 standing behind your windows. The look is borrowed from the show's title cards and
-the NERV screens: heavy mincho type, monospace readouts, purple and acid green on black, hazard stripes when
-something is wrong. There is a lot of it, but none of it moves for long. Every animation is a single cut or
-pulse and then the picture holds still.
+wallpapers, and Unit-01 standing behind your windows. The look comes from the show's title cards and
+computer screens: heavy mincho type, monospace readouts, purple and acid green on black, hazard stripes when
+something is wrong. Nothing animates for long. Every effect is a single cut or pulse, then the picture holds still.
 
 It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
 
@@ -29,35 +28,34 @@ It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the class
 
 <p align="center"><img src="docs/eva-stage.png" alt="Unit-01 on the stage" width="100%"></p>
 
-**The stage.** Unit-01 stands on an A.T. field to the right of your windows. It enters when the first
-window on a workspace opens, then stays put. `Super+D` docks a window into its space, `Super+Shift+B` hides it.
+**The figure.** Unit-01 stands to the right of your windows, on a hexagon field. It appears when the first
+window on a workspace opens, then stays still. `Super+D` docks a window into its space, `Super+Shift+B` hides it.
 
 <p align="center"><img src="docs/eva-herald.png" alt="the herald" width="100%"></p>
 
-**The herald.** Maximise a window (`Super+Return`) and a giant Unit-01 rises behind it.
+**Maximise.** `Super+Return` fills the screen with the window, and a large Unit-01 fades in behind it.
 
 <p align="center"><img src="docs/eva-launcher.png" alt="the launcher" width="100%"></p>
 
-**The launcher** (`Super+Space`). What you type becomes an episode title, the matches are the cast list,
-the selected app sits on a monolith.
+**Launcher** (`Super+Space`). Type to search apps. The query is set large, matches are listed below it, the
+selected one gets a detail card on the right.
 
 <p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
 
-**Alt+Tab.** One card per window, most recent first. Release Alt to jump.
+**Alt+Tab.** Window switcher. One card per window, most recent first, with the workspace number. Release Alt to jump.
 
 <p align="center"><img src="docs/eva-power.png" alt="the power menu" width="100%"></p>
 
-**Super+M.** Lock, sleep, log out, reboot, shut down. The cross of light plays when you confirm; shutting
-down asks twice.
+**Power menu** (`Super+M`). Lock, sleep, log out, reboot, shut down. Shutting down and logging out ask twice.
 
 <p align="center"><img src="docs/eva-bar.png" alt="the bar, calm and in EMERGENCY" width="100%"></p>
 
-**The bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume.
-When a workspace is urgent or the CPU is pegged it switches to an orange EMERGENCY strip (second row).
+**Bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
+workspace is urgent or the CPU is pegged it gets an orange warning strip (second row).
 
 <p align="center"><img src="docs/eva-eyecatch.png" alt="the workspace card" width="100%"></p>
 
-**The workspace card.** Switching workspaces shows the episode number for a moment, then fades.
+**Workspace switch.** A card with the workspace number shows for a moment, then fades.
 
 <p align="center"><img src="docs/eva-shot.png" alt="the screenshot tool" width="100%"></p>
 
@@ -66,18 +64,18 @@ to `~/Pictures/Screenshots`.
 
 <p align="center"><img src="docs/eva-lock.png" alt="the lock screen" width="100%"></p>
 
-**Lock screen** for hyprlock. One picture per monitor.
+**Lock screen** for hyprlock. One background per monitor, rendered at its size.
 
 <p align="center"><img src="docs/eva-login.png" alt="the login screen" width="100%"></p>
 
-**Login screen** for greetd + ReGreet.
+**Login screen** for greetd with ReGreet.
 
 And the rest, in short:
 
 - **Wallpapers**: eleven scenes from the show (Unit-01 and the moon, Lilith, Ramiel over Tokyo-3, the cross,
   Sachiel, the Lance, the A.T. field, the train, the Geofront, the entry plug), one per workspace, shuffled.
 - **Windows**: square corners, a slowly rotating lilac border, a hard purple shadow.
-- **Small things**: a critical notification drops a band under the bar. A new window gets one hexagon pulse.
+- **Small things**: a critical notification shows a warning band under the bar. A new window gets one hexagon pulse.
   The clock digits slide at the minute. After thirty seconds of a maxed-out CPU the stage turns orange until
   it cools down.
 
@@ -149,7 +147,7 @@ every option with its default. After editing, run `eva-ctl apply`.
 ```sh
 eva-ctl figure toggle          # the figure and its space (same as Super+Shift+B)
 eva-ctl impact figure          # replay the entrance
-eva-ctl herald                 # replay the maximise animation
+eva-ctl herald                 # replay the maximise backdrop
 eva-ctl eyecatch 3 PROJECTS    # try the workspace card
 eva-ctl alarm "text"           # try the EMERGENCY band
 eva-ctl alttab                 # the window switcher
@@ -161,7 +159,7 @@ The sections you will probably touch:
 
 | section | |
 |---|---|
-| `[figures]` | which workspaces get the figure, how much space it takes, the herald, window classes to ignore (games) |
+| `[figures]` | which workspaces get the figure, how much space it takes, the maximise backdrop, window classes to ignore (games) |
 | `[wallpapers]` | the pool, a fixed wallpaper per workspace, named workspaces, other monitors |
 | `[bar]` | height, number of tags, the readouts, now playing, tray, what clicks do, extra buttons |
 | `[overlays]` | the workspace card, the EMERGENCY band, Alt+Tab, the power menu, the pulses, the berserk threshold |
@@ -177,7 +175,7 @@ different colour scheme, copy the `eva` entry, change the values, put your own f
 are rewritten colour by colour on a switch.
 
 The pictures were generated locally with stable-diffusion.cpp. The scripts are in `tools/gen/` if you want
-to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the herald,
+to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the maximise figure,
 `wallpaper.py` maps a picture onto the palette, `build_theme_assets.py` packs it all.
 
 ## Other apps
@@ -187,7 +185,7 @@ to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig
 | | what | needs |
 |---|---|---|
 | kitty | colours and a tab bar with numbered title blocks | `include ./eva.conf` and `tab_bar_style custom` in kitty.conf |
-| starship | a prompt in the same style: `SYNC·main`, `T+2s`, `MAGI·23:10`, an EMERGENCY block after a failed command | starship |
+| starship | a prompt in the same style: git branch, command time, clock, and a warning block after a failed command | starship |
 | nvim | colorscheme, status line, tab colours and dashboard | AstroNvim with heirline and snacks, or just the colorscheme |
 | firefox | userChrome and userContent: tabs, url bar, menus, new tab page | restart Firefox |
 | discord | a theme | [Vencord](https://vencord.dev) |
