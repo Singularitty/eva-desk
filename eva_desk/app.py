@@ -419,12 +419,18 @@ class App(Gtk.Application):
             return "ok"
         if cmd == "shot":
             return self.shot.start() if self.shot else "screenshot tool disabled"
-        if cmd == "alttab":
-            o = self.overlays.get("alttab")
-            return o.open(self.focused_gdk()) if o else "alttab disabled"
-        if cmd == "power":
-            o = self.overlays.get("power")
-            return o.open(self.focused_gdk()) if o else "power menu disabled"
+        if cmd in ("alttab", "power"):
+            o = self.overlays.get(cmd)
+            if not o:
+                return f"{cmd} disabled"
+            if args and args[0] == "hide":
+                o.hide()
+                return "ok"
+            try:
+                return o.open(self.focused_gdk())
+            except Exception:
+                traceback.print_exc()
+                return f"{cmd} failed (see the log)"
         if cmd == "eyecatch":
             o = self.overlays.get("eyecatch")
             if not o:
