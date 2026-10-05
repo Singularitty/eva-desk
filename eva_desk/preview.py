@@ -86,7 +86,7 @@ def render_all(cfg, out, w=3440, h=1440):
     from .shot import Shot, backdrop
     import time as _t
     sh = Shot.__new__(Shot)
-    frozen = d.pixbuf_surface(C.asset("rooftop"))
+    frozen = d.pixbuf_surface(C.asset("unit01_moon"))
     sh.mons = [{"m": {}, "w": w, "h": h, "scale": 1, "frozen": frozen, "bg": backdrop(frozen, w, h)}]
     sh.pointer, sh.sel, sh.flash = (0, 0, 0), None, None
     sh.hover = (0, (300, 160, 1400, 900), "kitty")

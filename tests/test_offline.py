@@ -154,12 +154,12 @@ class Wallpapers(unittest.TestCase):
         cfg = config.load("/nonexistent")
         cfg["wallpapers"]["named"] = {"scratch": "#000000"}
         w = W(cfg)
-        self.assertEqual(w.choice(1, "1"), "ring")
+        self.assertEqual(w.choice(1, "1"), "unit01_hill")
         self.assertIn(w.choice(2, "2"), cfg["wallpapers"]["pool"])
         self.assertEqual(w.choice(-99, "scratch"), "#000000")
         self.assertIn(w.choice(5, "5"), cfg["wallpapers"]["pool"])
         self.assertTrue(config.asset("unit01_moon").endswith("assets/wallpapers/unit01_moon.webp"))
-        self.assertTrue(Path(config.asset("ring")).exists())
+        self.assertTrue(Path(config.asset("unit01_moon")).exists())
 
 
 class Launcher(unittest.TestCase):
