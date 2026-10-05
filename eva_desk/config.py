@@ -43,14 +43,15 @@ DEFAULTS = {
         "transition": "fade",
         "duration": 0.9,
         "shuffle_minutes": 20,
-        "pool": ["unit01_moon", "lilith", "tokyo3", "cross", "sachiel", "lance", "atfield", "geofront", "train", "plug"],
-        "workspaces": {"1": "unit01_hill"},
+        "pool": [],               # your own images (paths); nothing is bundled
+        "workspaces": {},
         "named": {},              # named workspace -> image or "#rrggbb"
         "static": {},             # other monitors: description substring -> image
     },
     "bar": {
         "enabled": True,
         "height": 56,
+        "opacity": 0.94,          # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid)
         "workspaces": 10,
         "hide_on_workspaces": [],
         "resources": ["cpu", "mem", "net"],   # resource tags left of the date; [] hides them

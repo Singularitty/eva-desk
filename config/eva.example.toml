@@ -33,11 +33,11 @@ daemon = "auto"        # auto | awww | swww | none
 transition = "fade"
 duration = 0.9
 shuffle_minutes = 20   # reshuffle the pool across workspaces (0 = never)
-# bundled: unit01_moon, unit01_hill, lilith, tokyo3, cross, sachiel, lance, atfield, train, geofront, plug; or a path to any image
-pool = ["unit01_moon", "lilith", "tokyo3", "cross", "sachiel", "lance", "atfield", "geofront", "train", "plug"]
+# your own images, any size (nothing is bundled): a path per entry, spread across the workspaces
+pool = []                 # e.g. ["~/Wallpapers/eva/unit01.png", "~/Wallpapers/eva/lilith.jpg"]
 
 [wallpapers.workspaces]   # fixed wallpapers per workspace id
-1 = "unit01_hill"
+# 1 = "~/Wallpapers/eva/unit01.png"
 
 [wallpapers.named]        # named workspaces: an image, or "#rrggbb" for a solid colour
 # scratch = "#000000"
@@ -48,6 +48,7 @@ pool = ["unit01_moon", "lilith", "tokyo3", "cross", "sachiel", "lance", "atfield
 [bar]
 enabled = true
 height = 56
+opacity = 0.94            # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid)
 workspaces = 10
 hide_on_workspaces = []   # named workspaces where the bar steps aside
 resources = ["cpu", "mem", "net"]   # CPU % / used RAM / network download tags left of the date; [] hides them

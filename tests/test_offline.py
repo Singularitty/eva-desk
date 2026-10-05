@@ -153,13 +153,15 @@ class Wallpapers(unittest.TestCase):
         from eva_desk.wallpaper import Wallpapers as W
         cfg = config.load("/nonexistent")
         cfg["wallpapers"]["named"] = {"scratch": "#000000"}
+        cfg["wallpapers"]["pool"] = ["~/x/two.png", "~/x/three.png"]
+        cfg["wallpapers"]["workspaces"] = {"1": "~/x/one.png"}
         w = W(cfg)
-        self.assertEqual(w.choice(1, "1"), "unit01_hill")
+        self.assertEqual(w.choice(1, "1"), "~/x/one.png")
         self.assertIn(w.choice(2, "2"), cfg["wallpapers"]["pool"])
         self.assertEqual(w.choice(-99, "scratch"), "#000000")
         self.assertIn(w.choice(5, "5"), cfg["wallpapers"]["pool"])
-        self.assertTrue(config.asset("unit01_moon").endswith("assets/wallpapers/unit01_moon.webp"))
-        self.assertTrue(Path(config.asset("unit01_moon")).exists())
+        self.assertEqual(config.asset("#0a0612"), "#0a0612")
+        self.assertTrue(config.asset("~/x/one.png").endswith("/x/one.png"))
 
 
 class Launcher(unittest.TestCase):

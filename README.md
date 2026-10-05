@@ -74,8 +74,8 @@ to `~/Pictures/Screenshots`.
 
 And the rest, in short:
 
-- **Wallpapers**: eleven scenes from the show (Unit-01 and the moon, Lilith, Ramiel over Tokyo-3, the cross,
-  Sachiel, the Lance, the A.T. field, the train, the Geofront, the entry plug), one per workspace, shuffled.
+- **Wallpapers**: one per workspace, shuffled from a pool of your own images. None are bundled; the show's
+  artwork is easy to find (wallhaven's "evangelion" tag has ultrawide and portrait pieces).
 - **Windows**: square corners, a slowly rotating lilac border, a hard purple shadow.
 - **Small things**: a critical notification shows a warning band under the bar. A new window gets one hexagon pulse.
   The clock digits slide at the minute. After thirty seconds of a maxed-out CPU the stage turns orange until
@@ -138,7 +138,7 @@ all work, and so do several monitors at once.
   wallpaper.
 - The space kept free for the figure defaults to `"auto"`: 30 % of the width on ultrawides, 24 % on 16:9
   and 16:10, 20 % on squarer screens. Put a number there to override it.
-- The bundled wallpapers are 3440x1440 and get centre-cropped elsewhere. Your own images can be any size.
+- Wallpapers can be any size; they are centre-cropped to the monitor.
 - Lock screen backgrounds are rendered per monitor. Run `tools/hyprlock_setup.py` again if you change your setup.
 
 ## Configuration

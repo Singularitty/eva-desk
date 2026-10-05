@@ -67,6 +67,14 @@ class Bar:
         y = (h - th) / 2 - 2 * u
         self.hits = []
         st = self.state
+        ground = float(self.cfg["bar"].get("opacity", 0.94))
+        if ground > 0:                                   # the bar's own ground, so it reads on any wallpaper
+            d.rgba(cr, d.INK, ground)
+            cr.rectangle(0, 0, w, h)
+            cr.fill()
+            d.rgba(cr, d.col("ink4"), min(1.0, ground + 0.06))
+            cr.rectangle(0, h - 2 * u, w, 2 * u)
+            cr.fill()
 
         nerv = True
         pad = 24 * u
