@@ -51,7 +51,7 @@ DEFAULTS = {
     "bar": {
         "enabled": True,
         "height": 56,
-        "opacity": 0.94,          # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid)
+        "opacity": 0.8,           # the bar's ink ground over the wallpaper (0 = see-through, 1 = solid); Hyprland blurs behind it
         "workspaces": 10,
         "hide_on_workspaces": [],
         "resources": ["cpu", "mem", "net"],   # resource tags left of the date; [] hides them
