@@ -362,10 +362,23 @@ class Launcher:
         # hazard rule and the key blocks
         by = cy + chh - 36 * s - 40 * s
         d.hazard(cr, px, by - 24 * s, cw - 72 * s, 10 * s, C(p["cshadow"]), C(p["card"][0]), period=24 * s)
+        # the key blocks shrink (then shorten) so the row never leaves the monolith
+        inner = cw - 72 * s
+        blocks = None
+        for labels in (("ENTER · OPEN", "TAB · NEXT", "ESC"), ("ENTER", "TAB", "ESC")):
+            for size in (18, 16, 14, 13, 12):
+                lays = [d.display(cr, label, size * s, italic=False, spacing=1 * s) for label in labels]
+                sizes = [d.text_size(lay) for lay in lays]
+                total = sum(tw + 32 * s for tw, _ in sizes) + 8 * s * (len(lays) - 1)
+                if total <= inner:
+                    blocks = list(zip(lays, sizes))
+                    break
+            if blocks:
+                break
+        else:
+            blocks = list(zip(lays, sizes))
         bx = px
-        for (bg, fg), label in zip(p["btn"], ("ENTER · OPEN", "TAB · NEXT", "ESC")):
-            lay = d.display(cr, label, 18 * s, italic=False, spacing=1 * s)
-            tw, th = d.text_size(lay)
+        for (bg, fg), (lay, (tw, th)) in zip(p["btn"], blocks):
             bw, bh = tw + 32 * s, th + 14 * s
             d.block(cr, bx, by, bw, bh, C(bg))
             d.draw_text(cr, lay, bx + 16 * s, by + 7 * s, C(fg))
