@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""eva-desk extras: the same look for the apps around the desk (kitty, starship, neovim, firefox, discord,
+spotify, the shell). The files under extras/ are authored in the eva theme; installing for another theme
+rewrites their colours role by role (themes.retheme), so every theme gets every extra.
+
+  eva-extras list
+  eva-extras install [--theme eva|vibe] kitty starship nvim firefox discord spotify shell | all
+  eva-extras paths                         where each extra goes on this machine
+
+Every file written gets a backup next to it (*.bak-eva-<date>) and is added to eva.toml's
+retheme_files, so `eva-ctl theme` keeps it in step afterwards.
+"""
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from eva_desk import config, themes  # noqa: E402
+
+EXTRAS = ROOT / "extras"
+HOME = Path.home()
+CONF = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+STAMP = time.strftime("%Y%m%d-%H%M%S")
+
+
+def firefox_profile():
+    """The default Firefox profile folder (XDG or classic layout), or None."""
+    for base in (CONF / "mozilla" / "firefox", HOME / ".mozilla" / "firefox"):
+        ini = base / "profiles.ini"
+        if ini.exists():
+            text = ini.read_text()
+            # Install section wins, else the first Default=1 profile, else the first Path=
+            m = re.search(r"\[Install[^\]]*\][^\[]*?Default=(.+)", text)
+            paths = [m.group(1).strip()] if m else []
+            paths += re.findall(r"Path=(.+)", text)
+            for p in paths:
+                p = p.strip()
+                cand = base / p if not p.startswith("/") else Path(p)
+                if cand.is_dir():
+                    return cand
+        hits = sorted(glob.glob(str(base / "*" / "places.sqlite")))
+        if hits:
+            return Path(hits[0]).parent
+    return None
+
+
+def targets():
+    """{extra: [(source under extras/, destination, mode)]}; mode: text (rethemed) or copy."""
+    ff = firefox_profile()
+    return {
+        "kitty": [("kitty/colors.conf", CONF / "kitty" / "vibe.conf", "text"),
+                  ("kitty/tab_bar.py", CONF / "kitty" / "tab_bar.py", "text")],
+        "starship": [("starship/starship.toml", CONF / "starship.toml", "text")],
+        "nvim": [("nvim/colors/vibe.lua", CONF / "nvim" / "colors" / "vibe.lua", "text"),
+                 ("nvim/plugins/vibe-ui.lua", CONF / "nvim" / "lua" / "plugins" / "vibe-ui.lua", "text")],
+        "firefox": ([("firefox/chrome/userChrome.css", ff / "chrome" / "userChrome.css", "text"),
+                     ("firefox/chrome/userContent.css", ff / "chrome" / "userContent.css", "text"),
+                     ("firefox/chrome/eva.png", ff / "chrome" / "eva.png", "copy"),
+                     ("firefox/user.js", ff / "user.js", "append")] if ff else []),
+        "discord": [("discord/vibe.theme.css", CONF / "Vencord" / "themes" / "vibe.theme.css", "text")],
+        "spotify": [("spotify/Eva/color.ini", CONF / "spicetify" / "Themes" / "Vibe" / "color.ini", "text"),
+                    ("spotify/Eva/user.css", CONF / "spicetify" / "Themes" / "Vibe" / "user.css", "text")],
+        "shell": [("shell/vibe.zsh", CONF / "zsh" / "vibe.zsh", "text"),
+                  ("shell/vivid.yml", CONF / "vivid" / "themes" / "vibe.yml", "text")],
+    }
+
+
+NOTES = {
+    "kitty": "add to kitty.conf:  include ./vibe.conf   and   tab_bar_style custom   (tab_bar.py sits next to it)",
+    "starship": "the prompt is the whole starship.toml; starship reads it on the next prompt",
+    "nvim": "AstroNvim: colorscheme = \"vibe\" in astroui opts; plugins/vibe-ui.lua is picked up by lazy. Other setups: :colorscheme vibe",
+    "firefox": "restart Firefox (user.js enables userChrome; the chrome/ folder is in your profile)",
+    "discord": "needs Vencord (vencord.dev); enable the theme in Settings > Vencord > Themes",
+    "spotify": "needs spicetify-cli; then: spicetify config current_theme Vibe color_scheme eva && spicetify backup apply",
+    "shell": "zsh: source ~/.config/zsh/vibe.zsh at the end of .zshrc; LS_COLORS via vivid (optional)",
+}
+
+
+def retheme_text(text, theme_name):
+    src, dst = themes.get("eva"), themes.get(theme_name)
+    return themes.retheme(text, src, dst) if theme_name != "eva" else text
+
+
+def register(paths):
+    """Add the installed files to eva.toml [theme] retheme_files (dedup), creating the key if needed."""
+    toml = config.CONFIG_DIR / "eva.toml"
+    if not toml.exists():
+        return
+    text = toml.read_text()
+    entries = [f'"{p}"' for p in paths]
+    m = re.search(r"(?ms)^retheme_files\s*=\s*\[(.*?)\]", text)
+    if m:
+        have = m.group(1)
+        new = [e for e in entries if e not in have]
+        if not new:
+            return
+        body = have.rstrip()
+        sep = "," if body.strip() and not body.rstrip().endswith(",") else ""
+        text = text[:m.start(1)] + body + sep + "\n                 " + ", ".join(new) + "\n" + text[m.end(1):]
+    elif re.search(r"(?m)^\[theme\]", text):
+        text = re.sub(r"(?m)^\[theme\]\s*$", "[theme]\nretheme_files = [" + ", ".join(entries) + "]", text, count=1)
+    else:
+        text = "[theme]\nretheme_files = [" + ", ".join(entries) + "]\n\n" + text
+    toml.write_text(text)
+
+
+def install(names, theme_name, dry=False):
+    t = targets()
+    if "all" in names:
+        names = list(t)
+    done = []
+    for name in names:
+        if name not in t:
+            print(f"unknown extra: {name} (have: {', '.join(t)})", file=sys.stderr)
+            continue
+        if not t[name]:
+            print(f"{name}: no Firefox profile found, skipped", file=sys.stderr)
+            continue
+        for rel, dst, mode in t[name]:
+            src = EXTRAS / rel
+            if dry:
+                print(f"{name}: {src.relative_to(ROOT)} -> {dst} ({mode})")
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists() and mode != "append":
+                shutil.copy(dst, dst.with_name(dst.name + ".bak-eva-" + STAMP))
+            if mode == "copy":
+                shutil.copy(src, dst)
+            elif mode == "append":
+                old = dst.read_text() if dst.exists() else ""
+                add = src.read_text()
+                if add.strip() not in old:
+                    dst.write_text(old.rstrip("\n") + ("\n" if old else "") + add)
+            else:
+                dst.write_text(retheme_text(src.read_text(), theme_name))
+            if mode == "text":
+                done.append(str(dst).replace(str(HOME), "~"))
+        print(f"{name}: installed ({theme_name}) · {NOTES.get(name, '')}")
+    if done and not dry:
+        register(done)
+
+
+def main():
+    args = sys.argv[1:]
+    theme_name = "eva"
+    if "--theme" in args:
+        i = args.index("--theme")
+        theme_name = args[i + 1]
+        del args[i:i + 2]
+    dry = "--dry-run" in args
+    args = [a for a in args if a != "--dry-run"]
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    if args[0] == "list":
+        for name, files in targets().items():
+            print(f"{name:9s} {NOTES.get(name, '')}")
+        return 0
+    if args[0] == "paths":
+        for name, files in targets().items():
+            for rel, dst, mode in files:
+                print(f"{name:9s} {dst}")
+        return 0
+    if args[0] == "install":
+        if theme_name not in themes.THEMES:
+            print(f"unknown theme {theme_name}", file=sys.stderr)
+            return 1
+        install(args[1:] or ["all"], theme_name, dry)
+        return 0
+    print(__doc__.strip())
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

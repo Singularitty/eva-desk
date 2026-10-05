@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Start the eva-desk daemon (hypr/eva.lua does this at login). Options: see `eva-desk --help`.
+ROOT="${EVA_DESK_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m eva_desk "$@"

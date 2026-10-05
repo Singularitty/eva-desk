@@ -1,0 +1,124 @@
+# eva-desk settings. After editing: `eva-ctl apply`.
+
+[theme]
+name = "eva"              # eva: Unit-01 purple / acid green (the NERV look); vibe: wine / bone / gold (Persona fight card)
+                          # `eva-ctl theme eva` switches and applies. Each theme has its own figures and wallpapers
+                          # under assets/themes/<name>/, border styles, fonts and GTK theme (gtk/make-gtk-theme.py --theme eva).
+eww_palette = ""          # write the theme's scss variables here on apply, e.g. "~/.config/eww/css/_vibe-palette.scss"
+retheme_files = []        # files with hand-written theme colours, rewritten on a switch: ["~/.config/dunst/dunstrc"]
+swap_files = []           # files with a per-theme version beside them, copied in on apply: ["~/.config/starship.toml"] uses starship.eva.toml
+after_apply = []          # commands after apply: ["dunstctl reload", "eww reload"]
+gsettings = true          # also point gsettings (gtk-theme, icon-theme) at the theme's GTK theme: Wayland GTK apps read that
+
+# [themes.eva.wallpapers]  # any section can be overridden per theme (used while that theme is active)
+# pool = ["unit01_moon", "lilith", "tokyo3", "sachiel", "cross", "lance"]
+
+[general]
+# Monitors that get the bar, the figures and the wallpapers: Hyprland output names ("DP-1") or
+# parts of the monitor description ("AG346UCD"). Empty = the largest monitor.
+main_monitors = []
+
+[figures]
+boxer = "all"          # "all" numbered workspaces, one workspace id, a list like [1, 3], or 0 = no boxer
+workspaces = 10        # how many numbered workspaces "all" covers
+knight = 0             # optional: workspace for the seated knight (0 = no knight)
+herald = true          # the herald plays when a window is maximised (Super+Return)
+boxer_stage = "auto"   # share of the screen width kept free next to the windows for the figure:
+                       # "auto" = 0.30 on ultrawides, 0.24 on 16:9 / 16:10, 0.20 on squarer screens; or a number
+knight_stage = "auto"  # ... and for the seated knight
+herald_ms = 360        # length of the herald's arm sweep
+# windows that never count (games go fullscreen; the figures stay out of their way)
+ignore_classes = ["^steam_app_", "^gamescope$"]
+
+[wallpapers]
+enabled = true
+daemon = "auto"        # auto | awww | swww | none
+transition = "fade"
+duration = 0.9
+shuffle_minutes = 20   # reshuffle the pool across workspaces (0 = never)
+# bundled (vibe): ring, sword, eclipse, emperor, crt, helmets, wine, rooftop; or a path to any image
+# bundled (eva): unit01_moon, unit01_hill, lilith, tokyo3, cross, sachiel, lance, atfield, train, geofront, plug
+pool = ["sword", "eclipse", "emperor", "crt", "helmets", "wine", "rooftop"]
+
+[wallpapers.workspaces]   # fixed wallpapers per workspace id
+1 = "ring"
+
+[wallpapers.named]        # named workspaces: an image, or "#rrggbb" for a solid colour
+# scratch = "#000000"
+
+[wallpapers.static]       # other monitors (description part or output name) -> image
+# "VG240Y" = "~/Wallpapers/side.jpg"
+
+[bar]
+enabled = true
+height = 56
+workspaces = 10
+hide_on_workspaces = []   # named workspaces where the bar steps aside
+resources = ["cpu", "mem", "net"]   # CPU % / used RAM / network download tags left of the date; [] hides them
+resource_seconds = 2      # how often they refresh (read from /proc, no extra tools)
+music = true              # now-playing tag (playerctl); middle click play/pause, hidden when nothing plays
+music_players = "spotify,%any"
+tray = true               # app tray icons: click activates, middle click, right click opens the app's menu
+
+[bar.actions]             # shell commands for clicks on the bar (empty = nothing)
+clock = ""
+date = ""
+volume = ""               # scroll on VOL changes the volume, middle click mutes
+star = ""
+title = ""
+cpu = ""                  # e.g. a system monitor: "kitty -e btop"
+mem = ""
+net = ""
+music = ""                # e.g. open your music panel
+
+# [[bar.buttons]]         # extra tags between VOL and the star (as many as you like)
+# name = "assistant"
+# label = "ASSIST"
+# action = "my-assistant --talk"         # left click
+# right_action = "my-assistant --toggle" # right click (middle_action too)
+# active_file = "$XDG_RUNTIME_DIR/my-assistant.listening"   # tag turns red while this exists
+
+[shot]                    # the screenshot tool on Print: drag a region, click a window, F = whole screen
+enabled = true
+folder = ""               # empty = <Pictures>/Screenshots
+editor = "satty --filename {}"   # hold Shift as you finish to annotate; "" = never
+
+# [hooks.scratch]         # commands when entering / leaving a named workspace
+# enter = "notify-send 'scratch'"
+# leave = "notify-send 'back'"
+
+[overlays]                # the nerv look's extra surfaces
+eyecatch = true           # episode card on a workspace switch you make; off during games
+eyecatch_style = "soft"   # soft: translucent card that fades (240 ms); cut: black card + inverted frame + lift (320 ms)
+eyecatch_ms = 0           # 0 = the style's own length
+alarm_band = true         # EMERGENCY band under the bar for critical notifications (ACK / CLOSE ALL)
+alarm_seconds = 120       # the band leaves by itself after this
+alttab = true             # Alt+Tab as the cast strip (release Alt to jump, Esc cancels)
+power = true              # the Third Impact power menu on Super+M (Enter twice for shutdown)
+[overlays.names]          # workspace names on the eye-catch
+# 3 = "PROJECTS"
+
+[power]                   # what the power menu runs
+lock = "hyprlock"
+sleep = "systemctl suspend"
+logout = ""               # empty = Hyprland's own exit
+reboot = "systemctl reboot"
+shutdown = "systemctl poweroff"
+
+[launcher]
+enabled = true
+search_url = "https://duckduckgo.com/?q={}"
+
+[hyprland]
+maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)
+launcher_bind = "SUPER + Space"   # this key opens the vibe launcher ("" = leave it alone)
+boxer_toggle_bind = "SUPER + SHIFT + B"   # boxer on / off (his reserved space goes with him)
+side_bind = "SUPER + D"           # dock the focused window into the boxer's space (again: back to the tiles)
+screenshot_bind = "Print"   # re-pointed at the themed screenshot tool
+alttab_bind = "ALT + Tab"   # re-pointed at the cast strip (overlays.alttab)
+power_bind = "SUPER + M"    # re-pointed at the power menu (overlays.power)
+style = "card"                    # border style off the figure workspaces: card | halo | iron
+rounding = 0
+gaps_in = 4
+gaps_out = 8
+border_speed = 100                # tenths of a second per turn of the border gradient (max 100 = 10 s); 0 = still

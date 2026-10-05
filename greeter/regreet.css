@@ -1,0 +1,51 @@
+/* ReGreet, eva-desk look: ink slab, bone outline, hard claret shadow, square corners */
+* { font-family: "Rubik", sans-serif; border-radius: 0; }
+
+window, label { color: #efe4cf; }
+
+frame {
+  background-color: #0c0608;
+  border: 2px solid #efe4cf;
+  padding: 28px;
+  box-shadow: 10px 10px 0 0 #8e1b33;
+}
+
+label.title, .greeting { font-family: "Anton", sans-serif; letter-spacing: 2px; color: #efe4cf; }
+
+entry, dropdown > button, combobox button {
+  min-height: 42px;
+  padding: 0 14px;
+  background-color: #070304;
+  background-image: none;
+  color: #efe4cf;
+  border: 1px solid #4a2a31;
+  box-shadow: none;
+  font-family: "Special Elite", "Rubik", monospace;
+}
+entry:focus-within { border-color: #c9a24a; box-shadow: 3px 3px 0 0 #8e1b33; }
+
+button {
+  min-height: 40px;
+  padding: 0 18px;
+  background-color: #1c1012;
+  background-image: none;
+  color: #efe4cf;
+  border: 1px solid #4a2a31;
+  box-shadow: none;
+  font-family: "Anton", sans-serif;
+  letter-spacing: 1px;
+}
+button:hover { background-color: #2e1a1f; border-color: #efe4cf; }
+button.suggested-action { background-color: #efe4cf; border-color: #efe4cf; color: #0c0608; box-shadow: 4px 4px 0 0 #8e1b33; }
+button.suggested-action:hover { background-color: #e9d29a; border-color: #e9d29a; }
+button.destructive-action { background-color: #8e1b33; border-color: #8e1b33; color: #efe4cf; }
+
+popover contents, popover.menu contents {
+  background-color: #0c0608;
+  border: 2px solid #efe4cf;
+  box-shadow: 4px 4px 0 0 #8e1b33;
+}
+popover modelbutton:hover, popover row:hover { background-color: #2e1a1f; }
+
+infobar, .error { color: #ff4d3a; }
+.clock, .time { font-family: "Doto", "Anton", monospace; font-size: 56px; font-weight: 700; color: #efe4cf; }

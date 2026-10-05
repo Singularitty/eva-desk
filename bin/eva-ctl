@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""eva-ctl: talk to the running eva-desk daemon.
+
+  eva-ctl launcher              toggle the launcher (bound to the launcher key)
+  eva-ctl shot                  the themed screenshot tool (bound to Print)
+  eva-ctl boxer [on|off|toggle] the boxer and his reserved space (Super+Shift+B toggles)
+  eva-ctl impact boxer|knight   play an impact frame on the main monitor (to try it)
+  eva-ctl herald                play the herald sweep (to try it)
+  eva-ctl alttab                the cast strip (bound to Alt+Tab)
+  eva-ctl power                 the Third Impact power menu (bound to Super+M)
+  eva-ctl eyecatch [N [NAME]]   play the workspace eye-catch (to try it)
+  eva-ctl alarm [TEXT]          show the EMERGENCY band (to try it)
+  eva-ctl bar show|hide
+  eva-ctl status | reload | quit
+  eva-ctl apply                 after editing eva.toml: regenerate settings.lua, reload Hyprland + daemon
+                                 (also writes the eww palette and runs the theme's after_apply commands)
+  eva-ctl theme [NAME]          show the active theme, or switch to NAME (vibe | eva) and apply it:
+                                 eva.toml [theme] name, eww palette, retheme_files, GTK theme, reload
+"""
+import os
+import shutil
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+SOCK = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eva-desk.sock"
+BIN = Path(os.path.realpath(__file__)).parent
+
+
+def send(cmd):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(3)
+        s.connect(str(SOCK))
+        s.sendall((cmd + "\n").encode())
+        data = b""
+        while not data.endswith(b"\n"):
+            b = s.recv(4096)
+            if not b:
+                break
+            data += b
+    return data.decode().strip()
+
+
+def _eva_desk():
+    """The package next to this script (a --link install runs from the checkout)."""
+    sys.path.insert(0, str(BIN.parent))
+    from eva_desk import config, themes
+    return config, themes
+
+
+def apply():
+    config, themes = _eva_desk()
+    cfg = config.load()
+    theme = config.current_theme()
+    subprocess.run([str(BIN / "eva-desk"), "--write-lua"], check=False)
+    # the eww widgets share the palette through one generated scss partial
+    scss = cfg["theme"].get("eww_palette")
+    if scss:
+        out = Path(os.path.expandvars(scss)).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(themes.eww_scss(theme))
+        print(f"eww palette: {out}")
+    # files with a per-theme version next to them (starship.eva.toml -> starship.toml) are copied in
+    for name in cfg["theme"].get("swap_files", []):
+        f = Path(os.path.expandvars(name)).expanduser()
+        real = f.resolve() if f.exists() else f            # ~/.config/x -> the dotfiles file the symlink points at
+        cands = [real.with_name(real.stem + "." + config.theme_name() + real.suffix),
+                 f.with_name(f.stem + "." + config.theme_name() + f.suffix)]
+        src = next((c for c in cands if c.is_file()), None)
+        if src:
+            shutil.copy(src, real)
+            print(f"swapped in {src.name}")
+    # files with hand-written theme colours follow the switch (previous theme remembered in the state dir)
+    state = config.STATE_DIR / "theme"
+    try:
+        prev = state.read_text().strip()
+    except OSError:
+        prev = themes.DEFAULT
+    if prev != config.theme_name():
+        src = themes.get(prev)
+        for name in cfg["theme"].get("retheme_files", []):
+            f = Path(os.path.expandvars(name)).expanduser()
+            if not f.is_file():
+                print(f"retheme: {f} not found", file=sys.stderr)
+                continue
+            text = f.read_text(errors="surrogateescape")
+            new = themes.retheme(text, src, theme)
+            if new != text:
+                f.with_name(f.name + ".bak-theme-" + prev).write_text(text, errors="surrogateescape")
+                f.write_text(new, errors="surrogateescape")
+                print(f"rethemed {f} ({prev} -> {config.theme_name()})")
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    state.write_text(config.theme_name() + "\n")
+    # GTK apps on Wayland take the theme and icons from gsettings (through the portal), not only settings.ini
+    if cfg["theme"].get("gsettings", True) and theme.get("gtk_theme") and shutil.which("gsettings"):
+        for key in ("gtk-theme", "icon-theme"):
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", key, theme["gtk_theme"]],
+                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["hyprctl", "reload"], stdout=subprocess.DEVNULL, check=False)
+    try:
+        print(send("reload"))
+    except OSError:
+        subprocess.Popen([str(BIN / "eva-desk")], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("started")
+    for cmd in cfg["theme"].get("after_apply", []):
+        subprocess.run(cmd, shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return 0
+
+
+def set_theme(name):
+    """Rewrite `name = ...` under [theme] in eva.toml (adding the section if needed), then apply."""
+    config, themes = _eva_desk()
+    if name not in themes.THEMES:
+        print(f"unknown theme {name!r}; known: {', '.join(themes.THEMES)}", file=sys.stderr)
+        return 1
+    path = config.CONFIG_DIR / "eva.toml"
+    text = path.read_text() if path.exists() else ""
+    import re
+    new, n = re.subn(r'(?m)^(\[theme\][^\[]*?^\s*name\s*=\s*)"[^"]*"', lambda m: m.group(1) + f'"{name}"', text, count=1)
+    if n == 0:
+        if re.search(r"(?m)^\[theme\]", text):
+            new = re.sub(r"(?m)^\[theme\]\s*$", f'[theme]\nname = "{name}"', text, count=1)
+        else:
+            new = f'[theme]\nname = "{name}"\n\n' + text
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new)
+    print(f"theme: {name}")
+    return apply()
+
+
+def main():
+    args = sys.argv[1:] or ["status"]
+    if args[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    if args[0] == "apply":
+        return apply()
+    if args[0] == "theme":
+        if len(args) > 1:
+            return set_theme(args[1])
+        config, themes = _eva_desk()
+        config.load()
+        print(f"{config.theme_name()} ({config.current_theme()['title']}); available: {', '.join(themes.THEMES)}")
+        return 0
+    try:
+        print(send(" ".join(args)))
+        return 0
+    except OSError:
+        print("eva-desk is not running (start it with: eva-desk &)", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

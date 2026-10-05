@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""eva-extras: install the desk's look for kitty, starship, neovim, firefox, discord, spotify, the shell."""
+import os
+import runpy
+import sys
+from pathlib import Path
+
+root = Path(os.path.realpath(__file__)).parent.parent
+sys.argv[0] = str(root / "tools" / "extras.py")
+runpy.run_path(sys.argv[0], run_name="__main__")

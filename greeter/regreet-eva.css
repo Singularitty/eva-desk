@@ -1,0 +1,59 @@
+/* ReGreet, eva-desk look: ink slab, bone outline, hard claret shadow, square corners */
+* { font-family: "Rubik", sans-serif; border-radius: 0; }
+
+window, label { color: #ebe6f7; }
+
+frame {
+  background-color: #0a0612;
+  border: 2px solid #ebe6f7;
+  padding: 28px;
+  box-shadow: 10px 10px 0 0 #6a2fb8;
+}
+
+label.title, .greeting { font-family: "Shippori Mincho B1", sans-serif; letter-spacing: 2px; color: #ebe6f7; }
+
+entry, dropdown > button, combobox button {
+  min-height: 42px;
+  padding: 0 14px;
+  background-color: #050309;
+  background-image: none;
+  color: #ebe6f7;
+  border: 1px solid #44307a;
+  box-shadow: none;
+  font-family: "Share Tech Mono", "Rubik", monospace;
+}
+entry:focus-within { border-color: #7dff3f; box-shadow: 3px 3px 0 0 #6a2fb8; }
+
+button {
+  min-height: 40px;
+  padding: 0 18px;
+  background-color: #1b1030;
+  background-image: none;
+  color: #ebe6f7;
+  border: 1px solid #44307a;
+  box-shadow: none;
+  font-family: "Shippori Mincho B1", sans-serif;
+  letter-spacing: 1px;
+}
+button:hover { background-color: #2a1a48; border-color: #ebe6f7; }
+button.suggested-action { background-color: #ebe6f7; border-color: #ebe6f7; color: #0a0612; box-shadow: 4px 4px 0 0 #6a2fb8; }
+button.suggested-action:hover { background-color: #c8ff9a; border-color: #c8ff9a; }
+button.destructive-action { background-color: #6a2fb8; border-color: #6a2fb8; color: #ebe6f7; }
+
+popover contents, popover.menu contents {
+  background-color: #0a0612;
+  border: 2px solid #ebe6f7;
+  box-shadow: 4px 4px 0 0 #6a2fb8;
+}
+popover modelbutton:hover, popover row:hover { background-color: #2a1a48; }
+
+infobar, .error { color: #ff5a1f; }
+.clock, .time { font-family: "Shippori Mincho B1", "Doto", monospace; font-size: 56px; font-weight: 800; color: #ebe6f7; letter-spacing: -2px; }
+/* the form as the pilot card: the frame sits over the field, the title reads IDENTIFY · PILOT */
+frame { margin-left: 150px; }
+label.title, .greeting { font-family: "Share Tech Mono", monospace; font-size: 12px; letter-spacing: 5px; color: #7dff3f; }
+entry { letter-spacing: 6px; font-size: 18px; }
+dropdown > button, combobox button { font-family: "Share Tech Mono", monospace; letter-spacing: 2px; font-size: 12px; }
+button.suggested-action { background-color: #7dff3f; border-color: #7dff3f; box-shadow: none; }
+button.suggested-action:hover { background-color: #c8ff9a; }
+.error, infobar { font-family: "Share Tech Mono", monospace; letter-spacing: 3px; }

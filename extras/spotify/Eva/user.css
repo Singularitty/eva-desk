@@ -1,0 +1,64 @@
+/* Eva desk · Spicetify theme "Eva", restrained edition: colours come from color.ini, this file only squares the
+   corners, sets Mincho on the big titles, mono on small captions, the green hazard progress bar, purple
+   scrollbars and the stage band under the library. Layout stays Spotify's. */
+@font-face { font-family: "Shippori Mincho B1"; src: local("Shippori Mincho B1 ExtraBold"), local("ShipporiMinchoB1-ExtraBold"); font-weight: 800; }
+@font-face { font-family: "Share Tech Mono"; src: local("Share Tech Mono"), local("ShareTechMono-Regular"); }
+:root {
+  --eva-ink: #0a0612; --eva-ink-deep: #050309; --eva-ink3: #1b1030; --eva-line: #2a1a48; --eva-line2: #44307a;
+  --eva-purple: #6a2fb8; --eva-lilac: #ebe6f7; --eva-lilac3: #857b9e; --eva-green: #7dff3f; --eva-orange: #ff5a1f;
+  --eva-display: "Shippori Mincho B1", serif; --eva-mono: "Share Tech Mono", monospace;
+}
+
+/* square */
+*, *::before, *::after { border-radius: 0 !important; }
+img, .main-image-image, .main-entityHeader-image, .main-yourLibraryX-listItem img { border-radius: 0 !important; }
+
+/* big titles in the title-card face: page / playlist / album names and section headings */
+.main-entityHeader-title, .main-entityHeader-title h1, h1.encore-text, [class*="encore-text-headline"],
+.main-shelf-title, .main-shelf-header h2, section > div > h2, .main-home-sectionTitle {
+  font-family: var(--eva-display) !important; font-weight: 800 !important; letter-spacing: -0.03em !important;
+}
+/* small captions as readouts (card subtitles, metadata lines, time stamps) */
+[class*="encore-text-marginal"], [class*="encore-text-body-small"]:not(.main-trackList-rowTitle):not(.main-trackInfo-name),
+.main-entityHeader-metaData, .main-trackList-rowDuration, .playback-bar__progress-time, .playback-bar__progress-time-elapsed,
+.main-playbackBarRemainingTime-container, .main-trackList-trackListHeaderRow {
+  font-family: var(--eva-mono) !important; letter-spacing: 1px;
+}
+
+/* the library: a line on the right and the stage band at the foot */
+.Root__nav-bar { border-right: 2px solid var(--eva-line) !important; }
+.Root__nav-bar::after { content: ""; display: block; height: 8px; background: repeating-linear-gradient(135deg, var(--eva-purple) 0 10px, var(--eva-ink-deep) 10px 20px); }
+.main-yourLibraryX-listItem[aria-selected="true"], .main-yourLibraryX-listItem .main-useDropTarget-listItem[data-active="true"] { background: var(--eva-ink3) !important; }
+
+/* cover art and cards: a purple drop on hover, no boxes around text */
+.main-entityHeader-image, .main-entityHeader-imageContainer img, .main-entityHeader-shadow { box-shadow: 10px 10px 0 0 var(--eva-purple) !important; }
+.main-card-card:hover, .main-card-cardContainer:hover { box-shadow: 8px 8px 0 0 var(--eva-purple); background: var(--eva-ink3) !important; }
+
+/* track list: the playing row title in green, the selected row lilac */
+.main-trackList-trackListRow.main-trackList-selected { background: var(--eva-lilac) !important; }
+.main-trackList-trackListRow.main-trackList-selected * { color: var(--eva-ink) !important; }
+.main-trackList-trackListRow.main-trackList-active .main-trackList-rowTitle { color: var(--eva-green) !important; }
+.main-trackList-trackListHeaderRow { border-bottom: 1px solid var(--eva-line) !important; letter-spacing: 3px; text-transform: uppercase; font-size: 10px !important; }
+
+/* play button: a green block */
+.main-playButton-PlayButton > button, button[data-testid="play-button"], .main-playPauseButton-button, button[data-testid="control-button-playpause"] {
+  background: var(--eva-green) !important; color: var(--eva-ink) !important; box-shadow: none !important;
+}
+.main-playButton-PlayButton > button:hover, button[data-testid="play-button"]:hover { transform: none !important; background: #c8ff9a !important; }
+
+/* now playing bar: lilac rule on top, hazard progress, green volume */
+.Root__now-playing-bar { border-top: 2px solid var(--eva-lilac) !important; }
+.progress-bar { --progress-bar-height: 6px !important; }
+.progress-bar__bg { background: var(--eva-ink3) !important; }
+.playback-bar .progress-bar__fg, .playback-bar .progress-bar__fg_wrapper > div { background: repeating-linear-gradient(135deg, var(--eva-green) 0 8px, var(--eva-ink-deep) 8px 16px) !important; }
+.progress-bar__slider { background: var(--eva-green) !important; width: 6px !important; height: 14px !important; box-shadow: none !important; }
+.volume-bar .progress-bar__fg, .volume-bar .progress-bar__fg_wrapper > div { background: var(--eva-green) !important; }
+.main-trackInfo-name, .main-trackInfo-name a { font-family: var(--eva-display) !important; font-weight: 800 !important; letter-spacing: -0.02em; }
+.main-trackInfo-artists, .main-trackInfo-artists a { font-family: var(--eva-mono) !important; letter-spacing: 1px; color: var(--eva-lilac3) !important; }
+
+/* menus and dialogs: monoliths with a purple drop */
+.main-contextMenu-menu, .GenericModal > div { border: 1px solid var(--eva-lilac) !important; box-shadow: 8px 8px 0 0 var(--eva-purple) !important; background: var(--eva-ink) !important; }
+.main-contextMenu-menuItemButton:hover, .main-contextMenu-menuItemButton:focus { background: var(--eva-purple) !important; color: var(--eva-lilac) !important; }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: var(--eva-ink-deep); } ::-webkit-scrollbar-thumb { background: var(--eva-purple); }

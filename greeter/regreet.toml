@@ -1,0 +1,14 @@
+[background]
+path = "/usr/share/backgrounds/vibe/login.png"
+fit = "Cover"
+
+[GTK]
+application_prefer_dark_theme = true
+font_name = "Rubik 13"
+
+[commands]
+reboot = ["systemctl", "reboot"]
+poweroff = ["systemctl", "poweroff"]
+
+[appearance]
+greeting_msg = "Welcome back"

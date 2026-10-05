@@ -1,0 +1,111 @@
+# Starship prompt, eva theme: a NERV readout. Title-card blocks (lilac / Unit-01 purple), MAGI monospace
+# labels, acid green for signals, NERV orange only when something is wrong. Swapped in by `eva-ctl theme`.
+"$schema" = 'https://starship.rs/config-schema.json'
+add_newline = true
+command_timeout = 800
+
+format = """
+[╭─](fg:#44307a)\
+$os$username$hostname\
+$directory\
+$git_branch$git_status$git_state\
+$fill\
+$python$nodejs$rust$golang$java$haskell$c$lua$conda$nix_shell\
+$jobs$cmd_duration\
+$time
+[╰─](fg:#44307a)$status$character"""
+
+# ── the header block: NERV, then the pilot (only when it is not the usual one) and the host over ssh
+[os]
+disabled = false
+format = "[ NERV ](bg:#ebe6f7 fg:#0a0612 bold)"
+[os.symbols]
+Arch = ""
+Linux = ""
+
+[username]
+show_always = false
+format = "[ $user ](bg:#ebe6f7 fg:#0a0612 bold)"
+
+[hostname]
+ssh_only = true
+format = "[ @$hostname ](bg:#ebe6f7 fg:#0a0612 bold)"
+
+# ── where we are: a purple block
+[directory]
+format = "[ $path ](bg:#6a2fb8 fg:#ebe6f7 bold)[$read_only](bg:#6a2fb8 fg:#c8ff9a)"
+truncation_length = 3
+truncate_to_repo = true
+truncation_symbol = "…/"
+home_symbol = "~"
+read_only = " 󰌾 "
+
+# ── git as the sync readout
+[git_branch]
+format = " [SYNC](fg:#7dff3f)[·](fg:#5a4b7a)[$branch](fg:#7dff3f bold)"
+symbol = ""
+
+[git_status]
+format = "( [$all_status$ahead_behind](fg:#ff8a45))"
+conflicted = "CONFLICT "
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+stashed = "≡"
+modified = "!${count}"
+staged = "+${count}"
+renamed = "»${count}"
+deleted = "✘${count}"
+
+[git_state]
+format = " [$state( $progress_current/$progress_total)](fg:#c77dff bold)"
+
+[fill]
+symbol = " "
+
+# ── toolchains: dim MAGI readouts
+[python]
+format = "[PY $pyenv_prefix($version)( \\($virtualenv\\)) ](fg:#857b9e)"
+[nodejs]
+format = "[NODE ($version) ](fg:#857b9e)"
+[rust]
+format = "[RS ($version) ](fg:#857b9e)"
+[golang]
+format = "[GO ($version) ](fg:#857b9e)"
+[java]
+format = "[JAVA ($version) ](fg:#857b9e)"
+[haskell]
+format = "[HS ($version) ](fg:#857b9e)"
+[c]
+format = "[C ($version) ](fg:#857b9e)"
+[lua]
+format = "[LUA ($version) ](fg:#857b9e)"
+[conda]
+format = "[CONDA $environment ](fg:#857b9e)"
+[nix_shell]
+format = "[NIX $state ](fg:#857b9e)"
+
+# ── mission clock: how long the last command took, background jobs, the time
+[cmd_duration]
+min_time = 2000
+format = "[T+$duration ](fg:#7dff3f)"
+
+[jobs]
+format = "[BG·$number ](fg:#c77dff)"
+
+[time]
+disabled = false
+time_format = "%H:%M"
+format = "[MAGI](fg:#7dff3f)[·](fg:#5a4b7a)[$time](fg:#b7aed0)"
+
+# ── the second line: an EMERGENCY block after a failed command, then the prompt mark
+[status]
+disabled = false
+format = "[▞▞](fg:#ff5a1f)[ 緊急 EMERGENCY $status ](bg:#ff5a1f fg:#0a0612 bold)[▞▞](fg:#ff5a1f) "
+pipestatus = false
+
+[character]
+success_symbol = "[❯](bold fg:#7dff3f)"
+error_symbol = "[❯](bold fg:#ff5a1f)"
+vimcmd_symbol = "[❮](bold fg:#c77dff)"
