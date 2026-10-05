@@ -14,6 +14,8 @@ optdepends=('awww: workspace wallpapers (or swww)'
             'wireplumber: volume in the bar'
             'hyprlock: the lock screen'
             'python-pillow: render the lock and login backgrounds'
+            'python-numpy: the GTK theme builder (eva-desk-setup --gtk) and the asset tools'
+            'python-scipy: the figure cutout tool (tools/gen)'
             'kitty: the kitty theme (eva-extras)'
             'starship: the prompt theme (eva-extras)'
             'greetd-regreet: the login screen')
