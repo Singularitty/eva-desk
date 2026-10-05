@@ -3,9 +3,8 @@
 #   ./install.sh             install a copy into ~/.local/share/eva-desk
 #   ./install.sh --link      install by symlinking this checkout (edit here, `eva-ctl reload` to see it)
 #   ./install.sh --no-hypr   do not touch hyprland.lua (add the dofile line yourself)
-#   ./install.sh --no-fonts  skip the font download (Anton, Archivo Black, Cinzel, Special Elite, Doto, VT323;
-#                            Shippori Mincho B1 and Share Tech Mono for the eva theme)
-#   ./install.sh --theme eva       start with the eva theme (default: vibe); `eva-ctl theme` switches later
+#   ./install.sh --no-fonts  skip the font download (Shippori Mincho B1, Share Tech Mono, Doto, Rubik and friends)
+#   ./install.sh --theme NAME      start with another theme from eva_desk/themes.py (default: eva)
 #   ./install.sh --extras all      also theme kitty, starship, neovim, firefox, discord, spotify, the shell
 #                                  (or a comma list: --extras kitty,starship); see `eva-extras list`
 #   ./install.sh --lock            set up hyprlock (SEELE council backgrounds per monitor + hyprlock.conf)
@@ -184,4 +183,4 @@ if [ "$GTK" = 1 ]; then
 fi
 
 say "done. Hyprland reloads its config by itself and eva.lua starts the daemon."
-say "settings: $CONF/eva.toml, then run: eva-ctl apply   (try: eva-ctl impact boxer)"
+say "settings: $CONF/eva.toml, then run: eva-ctl apply   (try: eva-ctl impact figure)"

@@ -39,7 +39,7 @@ class Bar:
 
     def update(self, **kw):
         changed = any(self.state.get(k) != v for k, v in kw.items())
-        if "clock" in kw and self.state.get("clock") not in (None, "--:--", kw["clock"]) and d.look() == "nerv" \
+        if "clock" in kw and self.state.get("clock") not in (None, "--:--", kw["clock"]) \
                 and self.cfg["overlays"].get("minute_flip", True):
             self.flip = (self.state["clock"], kw["clock"], time.monotonic())
             self._flip_tick()
@@ -68,8 +68,8 @@ class Bar:
         self.hits = []
         st = self.state
 
-        nerv = d.look() == "nerv"
-        pad = 24 * u if nerv else 32 * u
+        nerv = True
+        pad = 24 * u
 
         def tag(x, label, fill, fg, size=20, under=None, min_w=44, max_w=None, italic=None, mono=False):
             lay = d.layout(cr, label, d.F_META, (size - 4) * u) if mono else d.display(cr, label, size * u, italic=italic)
@@ -78,7 +78,7 @@ class Bar:
                 d.ellipsize(lay, max_w - pad)
                 tw = max_w - pad
             bw = max(min_w * u, tw + pad)
-            d.tag_box(cr, x, y, bw, th, fill, under=under, under_h=4 * u)
+            d.block(cr, x, y, bw, th, fill, under=under, under_h=4 * u)
             d.draw_text(cr, lay, x + (bw - tw) / 2, y + (th - tht) / 2, fg)
             return bw
 
@@ -111,7 +111,7 @@ class Bar:
         tw, tht = d.text_size(lay)
         bw, bh = tw + 56 * u, 44 * u
         bx, by = (w - bw) / 2, (h - bh) / 2 - 3 * u
-        if nerv:
+        if True:
             fill, shadow = (d.LED, d.BONE) if emergency else (d.BONE, d.CLARET)
             d.block(cr, bx, by, bw, bh, fill, shadow=shadow, shadow_off=(6 * u, 6 * u))
             flip = getattr(self, "flip", None)
@@ -128,9 +128,6 @@ class Bar:
                 cr.restore()
             else:
                 d.draw_text(cr, lay, bx + (bw - tw) / 2, by + (bh - tht) / 2, d.INK)
-        else:
-            d.skew_box(cr, bx, by, bw, bh, d.CLARET, shadow=d.INK, shadow_off=(6 * u, 6 * u), border=d.BONE, border_w=3 * u)
-            d.draw_text(cr, lay, bx + (bw - tw) / 2, by + (bh - tht) / 2, d.BONE)
         self.hits.append((bx, bx + bw, ("clock",)))
         centre_left = bx
 
@@ -172,7 +169,7 @@ class Bar:
                     tw = max_tw
                 bw = max(44 * u, tw + pad)
                 rx -= bw
-                d.tag_box(cr, rx, y, bw, th, fill, under=under, under_h=4 * u)
+                d.block(cr, rx, y, bw, th, fill, under=under, under_h=4 * u)
                 d.draw_text(cr, lay, rx + (bw - tw) / 2, y + (th - tht) / 2, fg)
                 self.hits.append((rx, rx + bw, (name,)))
                 rx -= 4 * u
@@ -184,7 +181,7 @@ class Bar:
             isz, step = 24 * u, 32 * u
             bw = len(icons) * step + 24 * u
             rx -= bw
-            d.tag_box(cr, rx, y, bw, th, d.INK, under=d.CLARET, under_h=4 * u)
+            d.block(cr, rx, y, bw, th, d.INK, under=d.CLARET, under_h=4 * u)
             ix = rx + 12 * u + (step - isz) / 2
             for key, surf, title in icons:
                 if surf is not None:

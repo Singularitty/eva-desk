@@ -29,7 +29,7 @@ class _View(Gtk.Widget):
 
 
 class Stage:
-    """Scenes for one monitor. `scene` is None, "boxer", "knight" or "herald"."""
+    """Scenes for one monitor. `scene` is None, "figure" or "herald"."""
 
     def __init__(self, app, gdk_monitor, connector, cfg):
         self.cfg = cfg
@@ -63,28 +63,21 @@ class Stage:
     # ---------------------------------------------------------------- geometry + textures
     def geometry(self, figure):
         from .config import stage_share
-        frac = {"boxer": stage_share(self.cfg, self.w, self.h), "knight": stage_share(self.cfg, self.w, self.h, "knight_stage")}.get(figure, 0)
+        frac = {"figure": stage_share(self.cfg, self.w, self.h)}.get(figure, 0)
         s = self.scale
         return S.Geometry(self.w * s, self.h * s, self.w * s * float(frac))
 
     def _build(self, name):
-        if name == "boxer_back":
-            g = self.geometry("boxer")
+        if name == "figure_back":
+            g = self.geometry("figure")
             hot = self.berserk
-            return lambda cr: S.boxer_back(cr, g, hot=hot), g
+            return lambda cr: S.figure_back(cr, g, hot=hot), g
         if name == "glow":
             return lambda cr: S.glow(cr, 512), S.Geometry(512, 512, 0)
-        if name == "knight":
-            g = self.geometry("knight")
-            castle = d.pixbuf_surface(str(d.asset_path("figures/castle.jpg")))
-            return lambda cr: S.knight_scene(cr, g, castle), g
         if name == "herald_back":
             g = self.geometry(None)
             hot = self.berserk
             return lambda cr: S.herald_backdrop(cr, g, hot=hot), g
-        if name == "knight_flash":
-            g = self.geometry("knight")
-            return lambda cr: S.knight_flash(cr, g), g
         raise KeyError(name)
 
     def texture(self, name, wait=False):
@@ -117,7 +110,7 @@ class Stage:
 
     def prepare(self, figure):
         """Warm the textures a workspace will need so its entrance starts at once."""
-        for name in {"boxer": ("boxer_back", "glow"), "knight": ("knight", "knight_flash")}.get(figure, ()):
+        for name in {"figure": ("figure_back", "glow")}.get(figure, ()):
             self.texture(name)
 
     def drop(self, keep=()):
@@ -141,18 +134,15 @@ class Stage:
                 self._start_anim("herald", f["herald_ms"])
             else:
                 self._stop_anim()
-        elif scene == "boxer":
-            self.texture("boxer_back", wait=True)
+        elif scene == "figure":
+            self.texture("figure_back", wait=True)
             self.texture("glow", wait=True)
             if impact:
-                self._start_anim("boxer", f.get("boxer_entry_ms", 450))   # smooth, behind the windows
+                self._start_anim("figure", f.get("figure_entry_ms", 450))   # smooth, behind the windows
             else:
                 self._stop_anim()
         else:
             self._stop_anim()
-            self.texture(scene, wait=impact)
-            if impact:
-                self.play_flash([("knight_flash", 160)])
         self.win.set_visible(True)
         self.view.queue_draw()
 
@@ -183,12 +173,8 @@ class Stage:
 
     # ---------------------------------------------------------------- painting
     def _paint(self, snap, w, h):
-        if self.scene == "boxer":
-            self._paint_boxer(snap, w, h, self._progress("boxer"))
-        elif self.scene == "knight":
-            tex = self.texture("knight")
-            if tex:
-                snap.append_texture(tex, rect(0, 0, w, h))
+        if self.scene == "figure":
+            self._paint_figure(snap, w, h, self._progress("figure"))
         elif self.scene == "herald":
             t = self._progress("herald")
             tex = self.texture("herald_back")
@@ -202,12 +188,12 @@ class Stage:
             self.theta = self.rig.theta(t)
             self._paint_herald(snap, w, h)
 
-    def _paint_boxer(self, snap, w, h, t):
-        p = S.boxer_entry(t)
+    def _paint_figure(self, snap, w, h, t):
+        p = S.figure_entry(t)
         from .config import stage_share
         g = S.Geometry(w, h, w * stage_share(self.cfg, self.w, self.h))
-        surf, x, y, bw, bh, cx, cy = g.boxer()
-        back = self.texture("boxer_back")
+        surf, x, y, bw, bh, cx, cy = g.figure()
+        back = self.texture("figure_back")
         if back:
             snap.save()
             snap.translate(point(cx, cy))

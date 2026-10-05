@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""Batch-generate figure candidates with stable-diffusion.cpp + Z-Image-Turbo.
-
-usage: gen.py JOB [JOB...] [--n 4] [--seed 1000] [--steps 8]
-Writes raw/<job>_<seed>.png and skips seeds that already exist.
-"""
-import argparse, os, subprocess, sys, time
+"""Eva theme candidates with stable-diffusion.cpp + Z-Image-Turbo. usage: gen.py JOB... [--n 2] [--seed 1000]"""
+import argparse, subprocess, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -12,152 +8,42 @@ RAW = HERE / "raw"
 M = Path.home() / ".local/share/sdcpp/models"
 SD = Path.home() / ".local/bin/sdcpp"
 
-GREEN = ("The chroma-key green screen behind him is lit separately and evenly: a perfectly flat, solid "
-         "green background, no props, no text, no border.")
-
-RIM = ("Low-key lighting: he is lit only from behind by two hard {col} rim lights, so his body is mostly "
-       "deep black shadow and a thin bright edge of light traces the outline of every muscle.")
-
-HERALD = ("Full-body backlit photograph of a tall, ripped warrior seen straight from the front, standing "
-          "with his feet planted apart, {pose}. Bare-chested with a sculpted, deeply defined chest, abs, "
-          "shoulders and arms, loose dark trousers and boots, a long tattered cape hanging from his "
-          "shoulders behind him. " + RIM.format(col="golden") + " " + GREEN)
+SIL = ("A solid pure black silhouette of {what} on a perfectly flat, solid white background. {pose} Full body, nothing "
+       "cropped, feet on the ground. Flat vector silhouette art, no shading, no details inside the silhouette, no text, no border.")
+UNIT01 = ("the giant humanoid mecha Evangelion Unit-01: slender tall humanoid robot body, a single long horn on the forehead, "
+          "tall boxy shoulder pylons, narrow waist, long legs")
+INK = ("Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine pale lavender-white "
+       "linework, cross-hatching and halftone dots, large areas filled with deep violet purple and one or two small accents of "
+       "acid neon green. Moody, high contrast, lots of black negative space, manga and Neon Genesis Evangelion inspired. "
+       "{frame} No text, no letters, no logos, no border, no frame.")
+WIDE = INK.format(frame="Ultra-wide panoramic framing.")
+TALL = INK.format(frame="Tall vertical portrait framing.")
 
 JOBS = {
-    "boxer_back": (896, 1344, (
-        "Full-body backlit photograph of a ripped heavyweight boxer seen directly from behind, standing "
-        "tall with both arms raised in victory, upper arms horizontal and forearms pointing straight up "
-        "like a goalpost, black boxing gloves high above his head. Bodybuilder physique with an extremely "
-        "shredded back: huge flared lats, thick trapezius, round striated rear deltoids, bulging triceps, "
-        "a deep spinal groove, visible separation between every muscle. Black satin boxing trunks and "
-        "black boxing boots. " + RIM.format(col="white") + " " + GREEN)),
-    "boxer_guard": (896, 1344, (
-        "Full-body backlit photograph of a ripped boxer in a fighting stance seen from the side, facing "
-        "left, lead fist raised high in front of his face and rear glove tucked by his chin, left foot "
-        "forward. Bodybuilder physique, shredded shoulders, arms and back, black boxing gloves, black "
-        "trunks and boots. " + RIM.format(col="white") + " " + GREEN)),
-    "herald_1": (1152, 1152, HERALD.format(pose="both arms hanging relaxed at his sides with open hands")),
-    "herald_2": (1152, 1152, HERALD.format(pose="both arms stretched straight out to the sides at shoulder height, palms open facing forward")),
-    "herald_3": (1152, 1152, HERALD.format(pose="both arms raised high and wide above his head in a V shape, palms open toward the sky, praising the sun")),
-    "herald_tri": (2048, 1024, (
-        "Three photographs side by side of the same tall, ripped warrior on the same green screen, seen "
-        "straight from the front, full body, feet planted apart, identical in every way except his arms. "
-        "Left panel: arms hanging relaxed at his sides. Middle panel: arms stretched straight out to the "
-        "sides at shoulder height, palms open. Right panel: arms raised high and wide in a V, palms open "
-        "toward the sky, praising the sun. Bare-chested with a sculpted, deeply defined chest, abs and "
-        "arms, loose dark trousers and boots, a long tattered cape behind him. Low-key lighting: lit only "
-        "from behind by two hard golden rim lights, so his body is mostly deep black shadow with a thin "
-        "bright edge of light along every muscle. Each panel has the same evenly lit, perfectly flat, solid "
-        "chroma-key green background, no text, no borders between panels.")),
-    "wp_sun": (1792, 768, ("A colossal sun drawn as concentric rings of crimson and off-white, filled with coarse halftone dots, half-sunk behind a jagged black mountain ridge, a few long thin black clouds across it, no rays. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_emperor": (1792, 768, ("An emperor in profile with eyes closed, wearing an enormous spiked sun crown and a feathered headdress, before a giant sun on the horizon. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_crt": (1792, 768, ("A retro 1980s home computer with a chunky CRT monitor, keyboard and floppy disks on a desk, the screen glowing with scanlines, tangled cables. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_helmets": (1792, 768, ("Two sleek robot helmets with dark visors floating side by side in front of a glowing pyramid made of light beams. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_wine": (1792, 768, ("A tall wine bottle pouring into a crystal wine glass, the wine splashing upward into a crown shape, grapes and vine leaves around it. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_gloves": (1792, 768, ("A pair of boxing gloves hanging by their laces from a ring post, the ring ropes stretching across the frame under harsh spotlights. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_sword": (1792, 768, ("A long sword plunged into a rock in the foreground, a gothic castle on a cliff behind it under a giant full moon, crows circling. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "wp_city": (1792, 768, ("A lone figure standing on a rooftop above a dense city skyline at night, a huge moon, telephone wires and antennas. "
-        "Flat screen-printed poster illustration in exactly three inks: jet black, warm off-white paper and deep crimson red. "
-        "Bold graphic silhouette art with heavy solid black shapes, crisp hand-inked edges, coarse halftone dot shading in red "
-        "and black, dramatic high-contrast composition in the style of Persona 5 key art and vintage propaganda posters. "
-        "Ultra-wide panoramic framing. No text, no letters, no logos, no border, no frame.")),
-    "dk_ring": (1792, 768, ("An empty boxing ring in a dark arena at night, lit by a single spotlight cone from above, a pair of boxing gloves hanging from the top rope. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_sword": (1792, 768, ("A long sword planted in a rocky hill in the foreground, a distant gothic castle on a cliff under a pale full moon, crows circling. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_eclipse": (1792, 768, ("A total solar eclipse: a black sun with a thin glowing off-white corona ring, above a jagged mountain ridge at night. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_emperor": (1792, 768, ("An emperor in profile with closed eyes, wearing an enormous spiked crown, a thin glowing ring behind his head. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_crt": (1792, 768, ("A retro 1980s computer with a chunky CRT monitor glowing in a pitch-dark room, the screen is the only light, cables snaking across the desk. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_helmets": (1792, 768, ("Two sleek robot helmets with dark visors facing each other in darkness, thin lines of light reflecting on their chrome. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_wine": (1792, 768, ("A wine glass and a bottle on a dark table, a single drop of wine falling into the glass, candle smoke curling upward. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "dk_city": (1792, 768, ("A lone figure on a rooftop above a dark sleeping city, a huge pale moon, telephone wires and antennas. "
-        "Dark screen-printed ink illustration on a jet-black background: mostly black, drawn with fine warm off-white "
-        "linework, cross-hatching and halftone dots, with only one or two small accents of deep crimson red. Moody, high "
-        "contrast, lots of black negative space, manga and Persona 5 inspired. Ultra-wide panoramic framing. No text, no "
-        "letters, no logos, no border, no frame.")),
-    "castle_a": (1792, 768, (
-        "Wide cinematic dark fantasy matte painting at dusk. The pitch-black silhouette of a ruined gothic "
-        "castle with tall broken spires stands on a distant hill on the right, against an enormous "
-        "smouldering sky that glows blood red overhead and ember orange near the horizon. Glowing embers "
-        "and ash drift through the air, a low mist fills the valley, the foreground is a dark rocky slope. "
-        "Only black silhouettes against the glowing sky, high contrast, no people, no text, no border.")),
-    "castle_b": (1792, 768, (
-        "Wide cinematic dark fantasy matte painting. An enormous black fortress with sharp towers and a "
-        "crumbling bridge rises from a jagged cliff on the right, a huge pale blood-red moon low behind it, "
-        "thick red haze, glowing embers and ash in the air. Pure black silhouettes against the glowing red "
-        "sky, high contrast, minimalist, no people, no text, no border.")),
-    "knight2": (1216, 1024, (
-        "Full-body backlit photograph of an exhausted knight in full dark plate armour seen from the "
-        "side, sitting on the floor and leaning his back against a wall on the left, facing right. One "
-        "knee is drawn up, the other leg stretched out, his helmeted head bowed. A long sword is planted "
-        "point-down beside him and both gauntlets rest on its crossguard. Heavy pauldrons, a torn cloak. "
-        "He sits inside a seamless chroma-key green infinity cove: the floor, the wall behind his back and "
-        "the background are one continuous, bright, evenly lit green surface with no visible corner and no "
-        "shadows. Low-key lighting on the knight himself: only a dim red rim light from behind catches the "
-        "edges of his armour, and a thin red glow shows through the visor slit. No props, no text, no border.")),
-    "knight": (1216, 1024, (
-        "Full-body backlit photograph of an exhausted knight in full dark plate armour seen from the "
-        "side, sitting on the ground and leaning his back against a plain wall on the left, facing right. "
-        "One knee is drawn up, the other leg stretched out, his helmeted head bowed. A long sword is "
-        "planted point-down in the ground beside him and both gauntlets rest on its crossguard. Heavy "
-        "pauldrons, a torn cloak pooling on the ground. Low-key lighting: only a dim red rim light from "
-        "behind catches the edges of the armour, and a thin red glow shows through the visor slit. The "
-        "wall and the background are the same evenly lit, perfectly flat, solid chroma-key green, no "
-        "props, no text, no border.")),
+    # figures (silhouettes)
+    "eva01_stance": (896, 1344, SIL.format(what=UNIT01, pose="Hunched aggressive fighting stance seen from the side facing left, fists clenched, feet planted apart.")),
+    "eva01_berserk": (896, 1344, SIL.format(what=UNIT01, pose="Berserk: hunched forward, seen from the front in three-quarter view, jaw wide open roaring, arms spread low with clawed hands, legs wide.")),
+    "eva01_knife": (896, 1344, SIL.format(what=UNIT01, pose="Standing tall seen from the side facing left, holding a large combat knife low in the right hand, left arm back, one foot forward.")),
+    "eva01_tpose": (1152, 1152, SIL.format(what=UNIT01, pose="Standing straight and symmetrical, seen exactly from the front, both arms stretched straight out horizontally to the sides at shoulder height, open hands, legs slightly apart.")),
+    "eva01_cross": (1152, 1152, SIL.format(what=UNIT01, pose="Crucified: nailed to a giant cross, seen exactly from the front, both arms stretched out straight and horizontal along the crossbeam at shoulder height, open hands, body hanging straight, legs together. The cross itself is white and invisible, only the robot is black.")),
+    "eva01_arms_up": (1152, 1152, SIL.format(what=UNIT01, pose="Seen exactly from the front, both arms raised high and wide above its head in a V shape, open hands reaching to the sky, head tilted back roaring, legs apart.")),
+    "eva01_tall": (768, 1792, SIL.format(what=UNIT01, pose="Standing tall and upright seen from the front, arms at the sides, looking up, feet apart.")),
+    # ultrawide wallpapers
+    "wp_unit01_moon": (1792, 768, "A close-up of the head of Evangelion Unit-01 in profile, long horn, jaw open roaring, a huge full moon behind it. " + WIDE),
+    "wp_unit01_hill": (1792, 768, "The giant mecha Evangelion Unit-01 standing on a hilltop at night, seen from far away as a dark silhouette with its horn and shoulder pylons, a colossal moon filling the sky behind it, a ruined city below. " + WIDE),
+    "wp_lilith": (1792, 768, "A colossal pale white giant with a seven-eyed purple mask, nailed to a huge black cross in a vast dark cavern, its legs dissolved into a lake of glowing liquid, tiny catwalks and spotlights in the distance. " + WIDE),
+    "wp_tokyo3": (1792, 768, "A futuristic city of skyscrapers in a wide valley at dusk, a giant glowing blue octahedron crystal floating in the sky above it, a drill beam of light shooting down from the crystal into the city, mountains behind. " + WIDE),
+    "wp_cross": (1792, 768, "A gigantic cross-shaped pillar of blinding light rising from a city on the sea at the horizon, shockwave rings of dust, a lone giant humanoid mecha silhouette in the foreground. " + WIDE),
+    "wp_sachiel": (1792, 768, "A tall thin humanoid angel with a bird-skull bone mask for a face and a glowing red sphere core in its chest, walking slowly through a city of skyscrapers, military helicopters around it, seen from below. " + WIDE),
+    "wp_lance": (1792, 768, "A giant red double-helix lance spiralling up into the night sky towards the moon, leaving a trail of light, seen from the ground past a ruined cityscape. " + WIDE),
+    "wp_atfield": (1792, 768, "A giant hexagonal honeycomb energy barrier glowing in the air, rippling outward from the clenched fist of a giant mecha pressing against it, hexagons fading into darkness. " + WIDE),
+    "wp_train": (1792, 768, "The empty interior of a commuter train at sunset, long rows of seats and hanging hand straps, harsh sunlight through the windows, one lone figure sitting alone at the far end. " + WIDE),
+    "wp_geofront": (1792, 768, "An enormous underground cavern with a lake and forests, a huge inverted black pyramid headquarters building standing on the lake, a city hanging from the cavern ceiling upside down, shafts of light from above. " + WIDE),
+    "wp_plug": (1792, 768, "The inside of a cylindrical cockpit capsule, a pilot's seat with twin control grips, the curved walls glowing with floating holographic readouts, the whole chamber filled with amber liquid. " + WIDE),
+    # portrait side monitor
+    "pt_unit01": (768, 1792, "The giant mecha Evangelion Unit-01 standing tall at night, seen from below, its horn and shoulder pylons against a colossal moon, ruined buildings at its feet. " + TALL),
+    "pt_sachiel": (768, 1792, "A tall thin humanoid angel with a bird-skull bone mask for a face and a glowing red sphere core in its chest, standing between skyscrapers, seen from below. " + TALL),
+    "pt_lilith": (768, 1792, "A colossal pale white giant with a seven-eyed purple mask nailed to a huge black cross in a dark cavern, seen from below, its legs dissolved into a glowing lake. " + TALL),
 }
 
 
@@ -168,18 +54,15 @@ def run(job, n, seed, steps):
         return
     RAW.mkdir(exist_ok=True)
     tmp = RAW / f".{job}_%d.png"
-    start = todo[0]
-    count = todo[-1] - start + 1
+    start, count = todo[0], todo[-1] - todo[0] + 1
     cmd = [str(SD), "--diffusion-model", str(M / "z_image_turbo-Q6_K.gguf"), "--vae", str(M / "ae.safetensors"),
            "--llm", str(M / "Qwen3-4B-Q8_0.gguf"), "-p", prompt, "--cfg-scale", "1.0", "--steps", str(steps),
-           "-W", str(w), "-H", str(h), "-s", str(start), "-b", str(count), "-o", str(tmp),
-           "--offload-to-cpu", "--diffusion-fa"]
+           "-W", str(w), "-H", str(h), "-s", str(start), "-b", str(count), "-o", str(tmp), "--offload-to-cpu", "--diffusion-fa"]
     t = time.time()
     p = subprocess.run(["nice", "-n", "10"] + cmd, capture_output=True, text=True)
     if p.returncode:
         sys.stderr.write(p.stdout[-3000:] + p.stderr[-3000:])
         raise SystemExit(f"{job}: sd-cli failed ({p.returncode})")
-    # sd-cli numbers batch images from 1 when -o has %d; map them back to their seeds
     made = sorted(RAW.glob(f".{job}_*.png"), key=lambda q: int(q.stem.rsplit("_", 1)[1]))
     for i, f in enumerate(made):
         f.rename(RAW / f"{job}_{start + i}.png")
@@ -189,9 +72,10 @@ def run(job, n, seed, steps):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("jobs", nargs="+")
-    ap.add_argument("--n", type=int, default=4)
+    ap.add_argument("--n", type=int, default=2)
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--steps", type=int, default=8)
     a = ap.parse_args()
-    for j in a.jobs:
+    jobs = list(JOBS) if a.jobs == ["all"] else a.jobs
+    for j in jobs:
         run(j, a.n, a.seed, a.steps)

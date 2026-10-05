@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a eva-desk GTK theme from an installed Everforest GTK theme: recolour every colour by role
 (ink / bone / claret / gold of the chosen theme), square the corners, add the hard offset shadows on popups.
-   make-gtk-theme.py [--theme vibe|eva] [SOURCE_THEME_DIR]   -> ~/.themes/<theme's gtk_theme> (Vibe-Dark, Eva-Dark)"""
+   make-gtk-theme.py [--theme NAME] [SOURCE_THEME_DIR]   -> ~/.themes/<the theme's gtk_theme> (Eva-Dark)"""
 import colorsys, os, re, shutil, sys
 from pathlib import Path
 
@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from eva_desk import themes  # noqa: E402
 
 args = sys.argv[1:]
-THEME_NAME = "vibe"
+THEME_NAME = "eva"
 if "--theme" in args:
     i = args.index("--theme")
     THEME_NAME = args[i + 1]
@@ -149,7 +149,7 @@ def figure_watermark(out, height=440):
     """The theme's stage figure as a dim silhouette with its echo, for the file-view background."""
     from PIL import Image
     import numpy as np
-    src = Path(__file__).resolve().parent.parent / "assets" / "themes" / THEME_NAME / "figures" / "boxer.png"
+    src = Path(__file__).resolve().parent.parent / "assets" / "themes" / THEME_NAME / "figures" / "figure.png"
     if not src.exists():
         return
     fig = Image.open(src).convert("RGBA")

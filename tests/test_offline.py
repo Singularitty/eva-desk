@@ -66,15 +66,14 @@ class Logic(unittest.TestCase):
         from eva_desk.app import App
         self.cfg = config.load("/nonexistent")
         self.cfg["wallpapers"]["enabled"] = False
-        self.cfg["figures"]["knight"] = 2          # the optional knight, to cover its path too
-        self.cfg["figures"]["boxer"] = 1
+        self.cfg["figures"]["figure"] = 1
         app = App.__new__(App)
         app.cfg = self.cfg
         app.hypr = FakeHypr()
         app.stages, app.bars, app.gdk_of = {"DP-3": FakeStage()}, {"DP-3": FakeBar()}, {}
         app.prev, app.urgent_ws, app.walls = {}, set(), None
         app._sync_components = lambda mains: None
-        app.boxer_set, app.boxer_on, app.pending_impact = set(config.boxer_workspaces(self.cfg)), True, False
+        app.figure_set, app.figure_on, app.pending_impact = set(config.figure_workspaces(self.cfg)), True, False
         self.app = app
 
     def step(self, ws, clients, ws_name=None):
@@ -85,50 +84,43 @@ class Logic(unittest.TestCase):
         return self.app.stages["DP-3"].calls[-1]
 
     def test_story(self):
-        self.assertEqual(self.step(1, []), (None, False, False))                       # empty boxer ws
-        self.assertEqual(self.step(1, [win(1)]), ("boxer", True, False))               # first window: impact
-        self.assertEqual(self.step(1, [win(1), win(1, addr="0x2")]), ("boxer", False, False))
+        self.assertEqual(self.step(1, []), (None, False, False))                       # empty figure ws
+        self.assertEqual(self.step(1, [win(1)]), ("figure", True, False))               # first window: impact
+        self.assertEqual(self.step(1, [win(1), win(1, addr="0x2")]), ("figure", False, False))
         self.assertEqual(self.step(1, [win(1, fs=1)]), ("herald", False, True))        # maximise: sweep
         self.assertEqual(self.step(1, [win(1, fs=1)]), ("herald", False, False))       # stays, no replay
-        self.assertEqual(self.step(1, [win(1)]), ("boxer", False, False))              # restore, no impact
+        self.assertEqual(self.step(1, [win(1)]), ("figure", False, False))              # restore, no impact
         self.assertEqual(self.step(1, []), (None, False, False))                       # last window closed
-        self.assertEqual(self.step(2, [win(2)]), ("knight", False, False))             # switch: no impact
         self.assertEqual(self.step(2, [win(2, fs=2)]), (None, False, False))           # true fullscreen
         self.assertEqual(self.step(3, [win(3)]), (None, False, False))                 # ordinary ws
         self.assertEqual(self.step(3, [win(3, fs=1)]), ("herald", False, True))        # herald anywhere
         self.assertEqual(self.step(1, [win(1, cls="steam_app_42", fs=2)]), (None, False, False))  # game
 
-    def test_boxer_everywhere_and_toggle(self):
-        self.cfg["figures"].update(boxer="all", knight=0)
-        self.app.boxer_set = set(config.boxer_workspaces(self.cfg))
-        self.assertEqual(sorted(self.app.boxer_set), list(range(1, 11)))
+    def test_figure_everywhere_and_toggle(self):
+        self.cfg["figures"].update(figure="all")
+        self.app.figure_set = set(config.figure_workspaces(self.cfg))
+        self.assertEqual(sorted(self.app.figure_set), list(range(1, 11)))
         self.step(3, [])
-        self.assertEqual(self.step(3, [win(3)]), ("boxer", True, False))               # any workspace
-        self.assertEqual(self.step(7, [win(7)]), ("boxer", False, False))              # switching: no impact
-        self.app.boxer_on = False                                                     # Super+Shift+B off
+        self.assertEqual(self.step(3, [win(3)]), ("figure", True, False))               # any workspace
+        self.assertEqual(self.step(7, [win(7)]), ("figure", False, False))              # switching: no impact
+        self.app.figure_on = False                                                     # Super+Shift+B off
         self.assertEqual(self.step(7, [win(7)]), (None, False, False))
-        self.app.boxer_on, self.app.pending_impact = True, True                       # ... and back on
-        self.assertEqual(self.step(7, [win(7)]), ("boxer", True, False))               # comes back swinging
-        self.assertEqual(self.step(7, [win(7)]), ("boxer", False, False))
+        self.app.figure_on, self.app.pending_impact = True, True                       # ... and back on
+        self.assertEqual(self.step(7, [win(7)]), ("figure", True, False))               # comes back swinging
+        self.assertEqual(self.step(7, [win(7)]), ("figure", False, False))
         self.assertEqual(self.step(7, [win(7, fs=1)]), ("herald", False, True))        # herald unaffected
-        self.assertEqual(self.step(-1338, [win(-1338)], ws_name="scratch"), (None, False, False))  # named ws: no boxer
+        self.assertEqual(self.step(-1338, [win(-1338)], ws_name="scratch"), (None, False, False))  # named ws: no figure
 
     def test_side_window(self):
-        self.cfg["figures"].update(boxer="all", knight=0)
-        self.app.boxer_set = set(config.boxer_workspaces(self.cfg))
+        self.cfg["figures"].update(figure="all")
+        self.app.figure_set = set(config.figure_workspaces(self.cfg))
         self.step(4, [])
-        self.assertEqual(self.step(4, [win(4)]), ("boxer", True, False))
+        self.assertEqual(self.step(4, [win(4)]), ("figure", True, False))
         side = win(4, addr="0x2", cls="discord", tags=["eva-side"])
-        self.assertEqual(self.step(4, [win(4), side]), (None, False, False))          # boxer steps aside
-        self.assertEqual(self.step(4, [win(4), win(4, addr="0x2")]), ("boxer", True, False))   # undocked: back in
+        self.assertEqual(self.step(4, [win(4), side]), (None, False, False))          # figure steps aside
+        self.assertEqual(self.step(4, [win(4), win(4, addr="0x2")]), ("figure", True, False))   # undocked: back in
         self.assertEqual(self.step(4, [side]), (None, False, False))                   # only the side window
         self.assertEqual(self.step(4, [win(4, fs=1), side]), ("herald", False, True))  # maximise still heralds
-
-    def test_no_knight(self):
-        self.cfg["figures"]["knight"] = 0
-        self.step(2, [])
-        self.assertEqual(self.step(2, [win(2)]), (None, False, False))
-        self.assertEqual(self.step(2, [win(2, fs=1)]), ("herald", False, True))
 
     def test_bar_tags_and_title(self):
         self.step(2, [win(1), win(2)])
@@ -166,7 +158,7 @@ class Wallpapers(unittest.TestCase):
         self.assertIn(w.choice(2, "2"), cfg["wallpapers"]["pool"])
         self.assertEqual(w.choice(-99, "scratch"), "#000000")
         self.assertIn(w.choice(5, "5"), cfg["wallpapers"]["pool"])
-        self.assertTrue(config.asset("ring").endswith("assets/wallpapers/ring.webp"))
+        self.assertTrue(config.asset("unit01_moon").endswith("assets/wallpapers/unit01_moon.webp"))
         self.assertTrue(Path(config.asset("ring")).exists())
 
 
@@ -200,7 +192,7 @@ class Ipc(unittest.TestCase):
         time.sleep(0.1)
         try:
             self.assertEqual(ipc.send("ping"), "pong")
-            self.assertEqual(ipc.send("impact boxer"), "echo impact boxer")
+            self.assertEqual(ipc.send("impact figure"), "echo impact figure")
         finally:
             loop.quit()
             server.service.stop()
@@ -214,11 +206,9 @@ class Settings(unittest.TestCase):
         config.CONFIG_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "eva-desk-test-conf"
         try:
             out = config.write_lua_settings(cfg, 3440).read_text()
-            self.assertIn("boxer_stage_px = 1032", out)
-            self.assertIn("knight_stage_px = 1445", out)
+            self.assertIn("stage_px = 1032", out)
             self.assertIn('launcher_bind = "SUPER + Space"', out)
             self.assertIn('maximize_binds = {"SUPER + RETURN"}', out)
-            self.assertIn("knight = 0", out)
             cfg["hyprland"]["maximize_bind"] = ["ALT + RETURN", "SUPER + RETURN"]
             out = config.write_lua_settings(cfg, 3440).read_text()
             self.assertIn('maximize_binds = {"ALT + RETURN", "SUPER + RETURN"}', out)
@@ -348,19 +338,22 @@ class Themes(unittest.TestCase):
         try:
             config.activate_theme("eva")
             self.assertEqual(d.THEME["title"], "Evangelion")
+            self.assertTrue(str(config.asset_path("figures/unit01.png")).endswith("figures/unit01.png"))
             self.assertEqual(d.CLARET, d.hexc("6a2fb8"))
             self.assertEqual(d.F_DISPLAY, "Shippori Mincho B1")
             self.assertTrue(str(config.theme_dir()).endswith("assets/themes/eva"))
-            self.assertTrue(str(config.asset_path("figures/boxer.png")).endswith("figures/boxer.png"))
+            self.assertTrue(str(config.asset_path("figures/unit01.png")).endswith("figures/unit01.png"))
             styles, inactive = themes.hypr_styles(d.THEME)
             self.assertEqual(styles["card"]["shadow"]["color"], "rgb(6a2fb8)")
             self.assertIn("$v-gold: #7dff3f;", themes.eww_scss(d.THEME))
+            other = themes.get("eva")
+            other["colors"]["claret"], other["colors"]["bone"], other["fonts"]["display"] = "8e1b33", "efe4cf", "Anton"
             text = 'frame_color = "#efe4cf"  box-shadow: 0 0 #8e1b33; rgba(8e1b3380) Anton'
-            self.assertEqual(themes.retheme(text, themes.get("vibe"), d.THEME),
+            self.assertEqual(themes.retheme(text, other, d.THEME),
                              'frame_color = "#ebe6f7"  box-shadow: 0 0 #6a2fb8; rgba(6a2fb880) Shippori Mincho B1')
         finally:
-            config.activate_theme("vibe")
-        self.assertEqual(d.CLARET, d.hexc("8e1b33"))
+            config.activate_theme("eva")
+        self.assertEqual(d.CLARET, d.hexc("6a2fb8"))
 
     def test_theme_overrides_and_lua(self):
         import tempfile

@@ -39,14 +39,11 @@ def render_all(cfg, out, w=3440, h=1440):
         print(f"{name}: {1000 * (time.perf_counter() - t):.0f} ms")
 
     from .config import stage_share
-    gb, gk, gh = S.Geometry(w, h, w * stage_share(cfg, w, h)), S.Geometry(w, h, w * stage_share(cfg, w, h, "knight_stage")), S.Geometry(w, h, 0)
-    castle = d.pixbuf_surface(str(d.asset_path("figures/castle.jpg")))
+    gb, gh = S.Geometry(w, h, w * stage_share(cfg, w, h)), S.Geometry(w, h, 0)
     rig = S.HeraldRig()
-    save("scene_boxer", w, h, lambda cr: S.boxer_scene(cr, gb))
-    save("scene_knight", w, h, lambda cr: S.knight_scene(cr, gk, castle))
+    save("scene_figure", w, h, lambda cr: S.figure_scene(cr, gb))
     for t in (0.0, 0.1, 0.25, 0.5):
-        save(f"boxer_entry_{t}", w, h, lambda cr, t=t: S.boxer_frame(cr, gb, t))
-    save("flash_knight", w, h, lambda cr: S.knight_flash(cr, gk))
+        save(f"figure_entry_{t}", w, h, lambda cr, t=t: S.figure_frame(cr, gb, t))
     for t in (0.0, 0.5, 1.0):
         save(f"herald_{t}", w, h, lambda cr, t=t: (S.herald_backdrop(cr, gh), rig.draw(cr, gh, t)))
 

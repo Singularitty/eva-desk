@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a eva-desk icon theme from an installed Everforest (Suru++) icon theme: same role colours as the
-GTK theme, but folders go claret instead of the accent. make-icon-theme.py [--theme vibe|eva] [SOURCE_THEME_DIR]"""
+GTK theme, but folders go claret instead of the accent. make-icon-theme.py [--theme NAME] [SOURCE_THEME_DIR]"""
 import importlib.util, os, re, shutil, subprocess, sys
 from pathlib import Path
 

@@ -25,17 +25,12 @@ def _palette():
     cc = lambda r: c.get(r, r)
     ff = lambda r: f.get(r, r)
     return {
-        "bg": cc(L["bg"]), "slab": cc(L["slab"]), "dots": (cc(L["dots"][0]), L["dots"][1]), "s1": cc(L["s1"]), "s2": cc(L["s2"]),
-        "q": [(cc(bg), cc(fg), ff(font)) for bg, fg, font in L["q"]],
-        "cur": cc(L["cur"]), "top": tuple(cc(x) for x in L["top"]), "arrow": cc(L["arrow"]),
+        "bg": cc(L["bg"]), "slab": cc(L["slab"]),
+        "cur": cc(L["cur"]), "top": tuple(cc(x) for x in L["top"]),
         "items": [cc(x) for x in L["items"]],
         "card": tuple(cc(x) for x in L["card"]), "cshadow": cc(L["cshadow"]),
         "btn": [(cc(bg), cc(fg)) for bg, fg in L["btn"]],
     }
-
-
-# staircase rows in the 1720x720 design: (x, y, font size)
-ROWS = [(70, 130, 104), (140, 268, 64), (190, 350, 64), (240, 432, 52), (290, 504, 40)]
 
 
 def C(h, a=1.0):
@@ -93,7 +88,7 @@ class Launcher:
             self.apps_at = time.time()
         self.query, self.sel = "", 0
         self._filter()
-        self.shown_at = time.monotonic() if (d.look() == "nerv" and self.cfg["overlays"].get("launcher_cut", True)) else 0
+        self.shown_at = time.monotonic() if self.cfg["overlays"].get("launcher_cut", True) else 0
         self.win.set_visible(True)
         self.win.present()
         if self.blink_id is None:
@@ -232,71 +227,7 @@ class Launcher:
         tex = render_texture(w * scale, h * scale, lambda cr: _background(cr, w * scale, h * scale))
         self.bg.set_paintable(tex)
 
-    def _draw(self, area, cr, w, h):
-        if d.look() == "nerv":
-            return self._draw_nerv(cr, w, h)
-        s = h / 720
-        p = _palette()
-        self.item_boxes = []
-        # ransom-note query, rotated -4 degrees
-        cr.save()
-        cr.translate(60 * s, 30 * s)
-        cr.rotate(math.radians(-4))
-        x = 0
-        for i, ch in enumerate(self.query[-28:] if self.query else ""):
-            bg, fg, font = p["q"][i % 4]
-            lay = d.layout(cr, ch.upper() if font != d.F_META else ch, font, 34 * s, weight=d.DISPLAY_WEIGHT if font == d.F_DISPLAY else 400)
-            tw, th = d.text_size(lay)
-            cr.rectangle(x + 2 * s, 0, tw + 16 * s, th + 4 * s)
-            d.rgba(cr, C(bg))
-            cr.fill()
-            d.draw_text(cr, lay, x + 10 * s, 2 * s, C(fg))
-            x += tw + 20 * s
-        if self.blink:
-            cr.rectangle(x + 6 * s, 2 * s, 4 * s, 40 * s)
-            d.rgba(cr, C(p["cur"]))
-            cr.fill()
-        cr.restore()
-
-        # staircase of results; the selection is always the big top row
-        visible = self.results[self.sel:self.sel + len(ROWS)]
-        for row, item in enumerate(visible):
-            rx, ry, size = ROWS[row]
-            label = self._label(item)
-            cr.save()
-            cr.translate(rx * s, (ry + size * 0.5) * s)
-            cr.rotate(math.radians(-8))
-            lay = d.display(cr, label, size * s, italic=False)
-            d.ellipsize(lay, (1000 - rx) * s)
-            tw, th = d.text_size(lay)
-            if row == 0:
-                pad = 24 * s
-                bw, bh = tw + 2 * pad, th
-                cr.move_to(0, -bh / 2 + bh * 0.08)
-                cr.line_to(bw, -bh / 2)
-                cr.line_to(bw * 0.96, bh / 2)
-                cr.line_to(bw * 0.04, bh / 2 - bh * 0.08)
-                cr.close_path()
-                d.rgba(cr, C(p["top"][0]))
-                cr.fill()
-                d.draw_text(cr, lay, pad, -th / 2, C(p["top"][1]))
-            else:
-                d.draw_text(cr, lay, 0, -th / 2, C(p["items"][min(row - 1, 3)]))
-            cr.restore()
-            box_w = (tw + 48 * s) if row == 0 else tw
-            self.item_boxes.append(((rx * s, ry * s, rx * s + box_w + 40 * s, (ry + size) * s), self.sel + row))
-        # arrow pointing at the selection
-        cr.move_to(34 * s, 150 * s)
-        cr.line_to(74 * s, 172 * s)
-        cr.line_to(34 * s, 194 * s)
-        cr.close_path()
-        d.rgba(cr, C(p["arrow"]))
-        cr.fill()
-
-        if visible:
-            self._card(cr, w, s, visible[0])
-
-    # ---------------------------------------------------------------- nerv: an episode title card
+    # ---------------------------------------------------------------- drawing: an episode title card
     def _item_text(self, item):
         kind, v = item
         if kind == "app":
@@ -308,7 +239,7 @@ class Launcher:
             return "run", v, "shell command", ""
         return "search", v, "web search", self.cfg["launcher"]["search_url"].split("/")[2]
 
-    def _draw_nerv(self, cr, w, h):
+    def _draw(self, area, cr, w, h):
         s = h / 720
         p = _palette()
         self.item_boxes = []
@@ -438,97 +369,15 @@ class Launcher:
             d.draw_text(cr, lay, bx + 16 * s, by + 7 * s, C(fg))
             bx += bw + 8 * s
 
-    def _card(self, cr, w, s, item):
-        p = _palette()
-        cw, chh = 620 * s, 170 * s
-        cx, cy = w - 70 * s - cw, 120 * s
-        kind, v = item
-        if kind == "app":
-            title = v.get_display_name() or v.get_name()
-            desc = v.get_description() or ""
-            n = self.counts.get(v.get_id() or v.get_name(), 0)
-            sub = (desc[:46] + ("…" if len(desc) > 46 else "")) + (f" · opened {n} times" if n else "")
-        elif kind == "cmd":
-            title, sub = "run", v
-        else:
-            title, sub = "search", v
-        cr.save()
-        cr.translate(cx + cw / 2, cy + chh / 2)
-        cr.rotate(math.radians(3))
-        cr.translate(-cw / 2, -chh / 2)
-
-        def card_path(ox=0, oy=0):
-            cr.move_to(ox, oy)
-            cr.line_to(ox + cw, oy + chh * 0.05)
-            cr.line_to(ox + cw * 0.97, oy + chh)
-            cr.line_to(ox + cw * 0.02, oy + chh * 0.94)
-            cr.close_path()
-        card_path(12 * s, 12 * s)
-        d.rgba(cr, C(p["cshadow"]))
-        cr.fill()
-        card_path()
-        d.rgba(cr, C(p["card"][0]))
-        cr.fill()
-        lay = d.display(cr, "SELECTED", 16 * s, italic=False, spacing=3 * s)
-        d.draw_text(cr, lay, 40 * s, 28 * s, C(p["card"][1]))
-        lay = d.layout(cr, title, d.F_TITLE, 50 * s, weight=d.DISPLAY_WEIGHT)
-        d.ellipsize(lay, cw - 80 * s)
-        d.draw_text(cr, lay, 40 * s, 52 * s, C(p["card"][2]))
-        lay = d.layout(cr, sub, d.F_META, 18 * s)
-        d.ellipsize(lay, cw - 80 * s)
-        d.draw_text(cr, lay, 40 * s, 122 * s, C(p["card"][3]))
-        cr.restore()
-        # buttons, skewed
-        bx, by = cx, cy + chh + 30 * s
-        for (bg, fg), label in zip(p["btn"], ("ENTER · OPEN", "TAB · NEXT", "ESC · BACK")):
-            lay = d.display(cr, label, 20 * s, italic=False)
-            tw, th = d.text_size(lay)
-            bw, bh = tw + 36 * s, th + 16 * s
-            d.parallelogram(cr, bx, by, bw, bh, skew=math.tan(math.radians(12)))
-            d.rgba(cr, C(bg))
-            cr.fill()
-            d.draw_text(cr, lay, bx + 18 * s, by + 8 * s, C(fg))
-            bx += bw + 10 * s
-
     def destroy(self):
         self.hide()
         self.win.destroy()
 
 
 def _background(cr, w, h):
-    s = h / 720
-    p = _palette()
-    d.rgba(cr, C(p["bg"]))
+    """A black room: the title card is the whole picture."""
+    d.rgba(cr, C(_palette()["bg"]))
     cr.paint()
-    if d.look() == "nerv":
-        return                                    # a black room: the title card is the whole picture
-
-    def rotated_rect(cx, cy, rw, rh, color):
-        cr.save()
-        cr.translate(cx * s, cy * s)
-        cr.rotate(math.radians(18))
-        cr.rectangle(-rw / 2 * s, -rh / 2 * s, rw * s, rh * s)
-        d.rgba(cr, C(color))
-        cr.fill()
-        cr.restore()
-    rotated_rect(315, 380, 1150, 1000, p["slab"])
-    # halftone dots
-    col, alpha = p["dots"]
-    step = 12 * s
-    r = step * 0.3
-    c = C(col, alpha)
-    cr.set_source_rgba(*c)
-    y = step / 2
-    while y < h:
-        x = step / 2
-        while x < w:
-            cr.move_to(x + r, y)
-            cr.arc(x, y, r, 0, 2 * math.pi)
-            x += step
-        y += step
-    cr.fill()
-    rotated_rect(595, 380, 70, 1000, p["s1"])
-    rotated_rect(657, 380, 14, 1000, p["s2"])
 
 
 def _score(q, name, extra):

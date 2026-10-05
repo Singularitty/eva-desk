@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """eva-desk extras: the same look for the apps around the desk (kitty, starship, neovim, firefox, discord,
-spotify, the shell). The files under extras/ are authored in the eva theme; installing for another theme
-rewrites their colours role by role (themes.retheme), so every theme gets every extra.
+spotify, the shell). The files under extras/ are written for the eva theme; installing for another theme from themes.py
+rewrites their colours role by role (themes.retheme).
 
   eva-extras list
   eva-extras install [--theme eva|vibe] kitty starship nvim firefox discord spotify shell | all
@@ -54,31 +54,31 @@ def targets():
     """{extra: [(source under extras/, destination, mode)]}; mode: text (rethemed) or copy."""
     ff = firefox_profile()
     return {
-        "kitty": [("kitty/colors.conf", CONF / "kitty" / "vibe.conf", "text"),
+        "kitty": [("kitty/colors.conf", CONF / "kitty" / "eva.conf", "text"),
                   ("kitty/tab_bar.py", CONF / "kitty" / "tab_bar.py", "text")],
         "starship": [("starship/starship.toml", CONF / "starship.toml", "text")],
-        "nvim": [("nvim/colors/vibe.lua", CONF / "nvim" / "colors" / "vibe.lua", "text"),
-                 ("nvim/plugins/vibe-ui.lua", CONF / "nvim" / "lua" / "plugins" / "vibe-ui.lua", "text")],
+        "nvim": [("nvim/colors/eva.lua", CONF / "nvim" / "colors" / "eva.lua", "text"),
+                 ("nvim/plugins/eva-ui.lua", CONF / "nvim" / "lua" / "plugins" / "eva-ui.lua", "text")],
         "firefox": ([("firefox/chrome/userChrome.css", ff / "chrome" / "userChrome.css", "text"),
                      ("firefox/chrome/userContent.css", ff / "chrome" / "userContent.css", "text"),
                      ("firefox/chrome/eva.png", ff / "chrome" / "eva.png", "copy"),
                      ("firefox/user.js", ff / "user.js", "append")] if ff else []),
-        "discord": [("discord/vibe.theme.css", CONF / "Vencord" / "themes" / "vibe.theme.css", "text")],
-        "spotify": [("spotify/Eva/color.ini", CONF / "spicetify" / "Themes" / "Vibe" / "color.ini", "text"),
-                    ("spotify/Eva/user.css", CONF / "spicetify" / "Themes" / "Vibe" / "user.css", "text")],
-        "shell": [("shell/vibe.zsh", CONF / "zsh" / "vibe.zsh", "text"),
-                  ("shell/vivid.yml", CONF / "vivid" / "themes" / "vibe.yml", "text")],
+        "discord": [("discord/eva.theme.css", CONF / "Vencord" / "themes" / "eva.theme.css", "text")],
+        "spotify": [("spotify/Eva/color.ini", CONF / "spicetify" / "Themes" / "Eva" / "color.ini", "text"),
+                    ("spotify/Eva/user.css", CONF / "spicetify" / "Themes" / "Eva" / "user.css", "text")],
+        "shell": [("shell/eva.zsh", CONF / "zsh" / "eva.zsh", "text"),
+                  ("shell/vivid.yml", CONF / "vivid" / "themes" / "eva.yml", "text")],
     }
 
 
 NOTES = {
-    "kitty": "add to kitty.conf:  include ./vibe.conf   and   tab_bar_style custom   (tab_bar.py sits next to it)",
+    "kitty": "add to kitty.conf:  include ./eva.conf   and   tab_bar_style custom   (tab_bar.py sits next to it)",
     "starship": "the prompt is the whole starship.toml; starship reads it on the next prompt",
-    "nvim": "AstroNvim: colorscheme = \"vibe\" in astroui opts; plugins/vibe-ui.lua is picked up by lazy. Other setups: :colorscheme vibe",
+    "nvim": "AstroNvim: colorscheme = \"eva\" in astroui opts; plugins/eva-ui.lua is picked up by lazy. Other setups: :colorscheme eva",
     "firefox": "restart Firefox (user.js enables userChrome; the chrome/ folder is in your profile)",
     "discord": "needs Vencord (vencord.dev); enable the theme in Settings > Vencord > Themes",
-    "spotify": "needs spicetify-cli; then: spicetify config current_theme Vibe color_scheme eva && spicetify backup apply",
-    "shell": "zsh: source ~/.config/zsh/vibe.zsh at the end of .zshrc; LS_COLORS via vivid (optional)",
+    "spotify": "needs spicetify-cli; then: spicetify config current_theme Eva color_scheme eva && spicetify backup apply",
+    "shell": "zsh: source ~/.config/zsh/eva.zsh at the end of .zshrc; LS_COLORS via vivid (optional)",
 }
 
 

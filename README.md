@@ -1,97 +1,94 @@
 <p align="center">
-  <img src="docs/hero.png" alt="eva-desk: Unit-01 standing on an A.T. field behind a window, under the NERV bar" width="100%">
+  <img src="docs/hero.png" alt="eva-desk" width="100%">
 </p>
 
 <h1 align="center">eva-desk</h1>
 
-<p align="center">
-  An Evangelion-flavoured desktop layer for <b>Hyprland</b>: a figure that lives on your workspaces,
-  a NERV bar, title-card launchers and menus, impact frames on everything you do.
-</p>
+<p align="center">A Neon Genesis Evangelion desktop for Hyprland.</p>
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="#what-you-get">What you get</a> ·
-  <a href="#themes">Themes</a> ·
+  <a href="#features">Features</a> ·
   <a href="#configuration">Configuration</a> ·
-  <a href="#extras-the-apps-around-the-desk">Extras</a> ·
-  <a href="#lock-and-login-screens">Lock &amp; login</a> ·
+  <a href="#other-apps">Other apps</a> ·
+  <a href="#lock-and-login">Lock and login</a> ·
   <a href="#faq">FAQ</a>
-</p>
-
-<p align="center">
-  <img alt="Hyprland" src="https://img.shields.io/badge/Hyprland-Lua%20config-6a2fb8?style=flat-square">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-7dff3f?style=flat-square&labelColor=0a0612">
-  <img alt="GTK" src="https://img.shields.io/badge/GTK-4%20%2B%20layer--shell-ebe6f7?style=flat-square&labelColor=0a0612">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-ff5a1f?style=flat-square&labelColor=0a0612">
 </p>
 
 ---
 
-## What you get
+eva-desk is a daemon that runs next to Hyprland and draws the desk: a bar, a launcher, a screenshot tool,
+wallpapers, and Unit-01 standing behind your windows. The look is borrowed from the show's title cards and
+the NERV screens: heavy mincho type, monospace readouts, purple and acid green on black, hazard stripes when
+something is wrong. There is a lot of it, but none of it moves for long. Every animation is a single cut or
+pulse and then the picture holds still.
+
+It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
+
+## Features
 
 | | |
 |---|---|
-| ![Unit-01 on the stage](docs/eva-stage.png) | ![the launcher as an episode title card](docs/eva-launcher.png) |
-| **A figure on the stage.** Open the first window on a workspace and Unit-01 enters behind it: one smooth impact, then it stands still on an A.T. field of hexagons. Tiled windows keep to the left; `Super+D` docks a window into its space. | **The launcher** (`Super+Space`) as an episode title card: your query set like a title, the candidates as the cast list, the selection on a SOUND ONLY monolith. |
-| ![Alt+Tab as a cast strip](docs/eva-alttab.png) | ![the Third Impact power menu](docs/eva-power.png) |
-| **Alt+Tab** as a cast strip: one episode card per window, most recent first, release Alt to jump. | **Super+M** opens *Third Impact?*: lock, sleep, log out, reboot, shut down as monoliths. The cross of light plays when you confirm. |
-| ![the lock screen: the SEELE council](docs/eva-lock.png) | ![the login screen](docs/eva-login.png) |
-| **Lock screen** (hyprlock): the SEELE council, SOUND ONLY, one picture per monitor. | **Login screen** (ReGreet): pilot identification, with Unit-01 on the field. |
+| ![](docs/eva-stage.png) | ![](docs/eva-launcher.png) |
+| **The stage.** Unit-01 stands on an A.T. field to the right of your windows. It enters when the first window on a workspace opens, then stays put. `Super+D` docks a window into its space, `Super+Shift+B` hides it. | **The launcher** (`Super+Space`). What you type becomes an episode title, the matches are the cast list, the selected app sits on a monolith. |
+| ![](docs/eva-alttab.png) | ![](docs/eva-power.png) |
+| **Alt+Tab.** One card per window, most recent first. Release Alt to jump. | **Super+M.** Lock, sleep, log out, reboot, shut down. The cross of light plays when you confirm; shutting down asks twice. |
+| ![](docs/eva-lock.png) | ![](docs/eva-login.png) |
+| **Lock screen** for hyprlock. One picture per monitor. | **Login screen** for greetd + ReGreet. |
 
-And the rest of the desk:
+<p align="center"><img src="docs/eva-bar.png" alt="the bar" width="100%"></p>
 
-- **The bar.** Workspace tags as title blocks, the window title, a clock badge, tray, now playing, MAGI readouts
-  for CPU, RAM and network, date and volume. When something runs hot or a workspace is urgent the bar goes into
-  **EMERGENCY**: an orange hazard strip and the clock flips orange.
-- **The herald.** Maximise a window (`Super+Return`) and a giant Unit-01 rises behind it.
-- **A screenshot tool** (`Print`) that freezes the screen, frames your pick in hazard stripes and stamps 撮影 · SNAP.
-- **Wallpapers** per workspace: eleven Evangelion scenes (Unit-01 at the moon, Lilith, Ramiel over Tokyo-3, the
-  cross, Sachiel, the Lance, the A.T. field, the train, the Geofront, the entry plug) with a halftone dot screen.
-- **Windows** get square corners, a slow rotating lilac border and a hard purple drop shadow.
-- **Motions, once each.** A workspace switch cuts to an episode card. A critical notification drops an
-  EMERGENCY band under the bar. A new window pulses one hexagon. The clock's digits slide at the minute. Thirty
-  seconds of a pegged CPU turn the stage berserk (orange) until it cools. Nothing loops.
+The rest, in short:
 
-<p align="center"><img src="docs/eva-bar.png" alt="the bar, calm and in EMERGENCY" width="100%"></p>
+- **Bar**: workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
+  workspace is urgent or the CPU is pegged it switches to an orange EMERGENCY strip.
+- **Herald**: maximise a window (`Super+Return`) and a giant Unit-01 rises behind it.
+- **Screenshots** (`Print`): the screen freezes, you pick a region or a window, it goes to the clipboard and
+  to `~/Pictures/Screenshots`.
+- **Wallpapers**: eleven scenes from the show (Unit-01 and the moon, Lilith, Ramiel over Tokyo-3, the cross,
+  Sachiel, the Lance, the A.T. field, the train, the Geofront, the entry plug), one per workspace, shuffled.
+- **Windows**: square corners, a slowly rotating lilac border, a hard purple shadow.
+- **Small things**: a workspace switch shows the episode number for a moment. A critical notification drops
+  a band under the bar. A new window gets one hexagon pulse. The clock digits slide at the minute. After
+  thirty seconds of a maxed-out CPU the stage turns orange until it cools down.
 
-Your keybinds stay. eva-desk adds `Super+Return`, `Super+Shift+B` (figure on/off), `Super+D` (dock a window)
-and re-points your launcher key, `Print`, `Alt+Tab` and `Super+M`. Every bind is configurable.
+Your own keybinds are left alone. eva-desk adds `Super+Return`, `Super+Shift+B` and `Super+D`, and takes
+over your launcher key, `Print`, `Alt+Tab` and `Super+M`. All of them can be changed or turned off.
 
 ## Install
 
 ```sh
-git clone https://github.com/Singularitty/eva-desk && cd eva-desk
+git clone https://github.com/Singularitty/eva-desk
+cd eva-desk
 ./install.sh --extras all --lock --gtk
 ```
 
-The installer checks the dependencies, copies everything to `~/.local/share/eva-desk`, puts `eva-desk`,
-`eva-ctl` and `eva-extras` in `~/.local/bin`, downloads the fonts (Google Fonts, OFL / Apache) to
-`~/.local/share/fonts/eva-desk`, writes `~/.config/eva-desk/eva.toml`, and appends one line to the end of
-`~/.config/hypr/hyprland.lua` (with a backup):
+This copies the program to `~/.local/share/eva-desk`, links `eva-desk`, `eva-ctl` and `eva-extras` into
+`~/.local/bin`, downloads the fonts to `~/.local/share/fonts/eva-desk`, writes `~/.config/eva-desk/eva.toml`
+and adds one line at the end of `~/.config/hypr/hyprland.lua` (a backup is kept):
 
 ```lua
 dofile(os.getenv("HOME") .. "/.local/share/eva-desk/hypr/eva.lua")
 ```
 
-Hyprland reloads its config by itself and `eva.lua` starts the daemon. Then **turn off your old bar and
-wallpaper script** (eva-desk brings both), or set `[bar] enabled = false` / `[wallpapers] enabled = false`.
+Hyprland picks the change up on its own and the daemon starts. If you already run a bar or a wallpaper
+script, turn them off, or disable eva-desk's with `[bar] enabled = false` and `[wallpapers] enabled = false`.
 
-| option | what it does |
+| flag | |
 |---|---|
-| `--extras all` | the same look for kitty, starship, Neovim, Firefox, Discord, Spotify and the shell (or a list: `--extras kitty,starship`) |
-| `--lock` | hyprlock: a SEELE council background rendered for each of your monitors plus `hyprlock.conf` |
-| `--gtk` | a matching GTK 3 / GTK 4 theme (Thunar gets a NERV stylesheet and a Unit-01 watermark) and icon theme; built from an installed Everforest theme |
-| `--theme vibe` | start with the other theme, the wine-and-gold fight card (see [Themes](#themes)) |
-| `--link` | run from the checkout instead of a copy (edit, then `eva-ctl reload`) |
-| `--no-hypr`, `--no-fonts` | leave `hyprland.lua` alone / skip the font download |
+| `--extras all` | also theme kitty, starship, Neovim, Firefox, Discord, Spotify and the shell. A list works too: `--extras kitty,starship` |
+| `--lock` | set up hyprlock: a background per monitor and a `hyprlock.conf` |
+| `--gtk` | build the GTK 3 / 4 theme and icon theme. Thunar gets its own stylesheet. Needs an Everforest GTK theme installed to recolour |
+| `--link` | run from the git checkout instead of a copy, handy for hacking on it |
+| `--no-hypr` | do not touch `hyprland.lua` |
+| `--no-fonts` | skip the font download |
 
-### Requirements
+### Dependencies
 
-- **Hyprland 0.56+ with the Lua config** (`hyprland.lua`; the legacy `hyprland.conf` is not enough).
-- Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
-- Optional: `awww` or `swww` (wallpapers), `wpctl` (volume), `playerctl` (now playing), `grim` + `wl-copy`
-  (screenshots), `hyprlock` (lock screen), `potrace` + `rsvg-convert` (only to build new figures).
+Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
+
+Optional: `awww` or `swww` for wallpapers, `wpctl` for volume, `playerctl` for now playing, `grim` and
+`wl-copy` for screenshots, `hyprlock` for the lock screen.
 
 ```sh
 # Arch
@@ -102,127 +99,120 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-gtk4layershel
 sudo dnf install python3-gobject python3-cairo gtk4 gtk4-layer-shell
 ```
 
-### Displays
+### Monitors
 
-Everything is drawn from the monitor's own size, so it works on 16:9, 16:10 and ultrawide screens, with
-HiDPI scaling, portrait monitors, and more than one monitor.
+Everything is sized from the monitor it is drawn on, so 16:9, 16:10, ultrawide, HiDPI and portrait screens
+all work, and so do several monitors at once.
 
-- `[general] main_monitors` names the monitors that get the bar, the figure and the wallpapers (output name
-  or a part of the description). Empty = the largest monitor. Other monitors get a static wallpaper.
-- The stage (the space kept free for the figure) is `"auto"`: 30 % of the width on ultrawides, 24 % on
-  16:9 / 16:10, 20 % on squarer screens. Set a number to pin it.
-- Bundled wallpapers are 3440x1440 and are centre-cropped on other shapes; your own images go in `[wallpapers] pool`.
-- Lock screen backgrounds are rendered per monitor at its size and orientation; re-run `tools/hyprlock_setup.py`
-  after a monitor change.
-
-## Themes
-
-eva-desk ships two themes. Switch with `eva-ctl theme <name>`; it changes the palette, fonts, figures,
-wallpapers, window borders, the GTK theme, the eww palette and every extra you installed, in one go.
-
-| `eva` (default) · the NERV look | `vibe` · the fight card |
-|---|---|
-| ![](docs/eva-herald.png) | ![](docs/vibe-stage.png) |
-| Unit-01 purple, acid green, lilac on ink, NERV orange only when something is wrong. Shippori Mincho title cards, Share Tech Mono readouts, hexagons and hazard stripes. | Wine, bone and gold. Persona-5 skewed tags, speed lines, a boxer who slams onto the stage, a herald who praises the sun. |
-
-A theme is a dictionary in `eva_desk/themes.py` (every colour by role, fonts, the launcher colourway,
-Hyprland border styles, the GTK theme name) plus a folder `assets/themes/<name>/` (figures, the herald rig,
-wallpapers). To make your own, copy an entry, change the colours, drop your pictures in the folder. The
-Eva assets were generated locally with stable-diffusion.cpp; the pipeline is in `tools/gen/`.
+- `[general] main_monitors` lists the monitors that get the bar, the figure and the wallpapers, by output
+  name or a part of the description. Leave it empty to use the largest one. Other monitors only get a static
+  wallpaper.
+- The space kept free for the figure defaults to `"auto"`: 30 % of the width on ultrawides, 24 % on 16:9
+  and 16:10, 20 % on squarer screens. Put a number there to override it.
+- The bundled wallpapers are 3440x1440 and get centre-cropped elsewhere. Your own images can be any size.
+- Lock screen backgrounds are rendered per monitor. Run `tools/hyprlock_setup.py` again if you change your setup.
 
 ## Configuration
 
-`~/.config/eva-desk/eva.toml`. Every option with its default is in [`config/eva.example.toml`](config/eva.example.toml).
-After editing, `eva-ctl apply` regenerates what Hyprland needs, reloads Hyprland and the daemon, rewrites
-the eww palette if you use one, and runs your `after_apply` commands.
+Everything lives in `~/.config/eva-desk/eva.toml`. [`config/eva.example.toml`](config/eva.example.toml) lists
+every option with its default. After editing, run `eva-ctl apply`.
 
 ```sh
-eva-ctl theme eva | vibe      # switch themes
-eva-ctl boxer toggle          # the figure and its reserved space (also Super+Shift+B)
-eva-ctl impact boxer          # play the entrance; eva-ctl herald plays the maximise rise
-eva-ctl eyecatch 3 PROJECTS   # try the episode card; eva-ctl alarm "text" tries the EMERGENCY band
-eva-ctl alttab | power        # the cast strip and the power menu, also on their keys
+eva-ctl figure toggle          # the figure and its space (same as Super+Shift+B)
+eva-ctl impact figure          # replay the entrance
+eva-ctl herald                 # replay the maximise animation
+eva-ctl eyecatch 3 PROJECTS    # try the workspace card
+eva-ctl alarm "text"           # try the EMERGENCY band
+eva-ctl alttab                 # the window switcher
+eva-ctl power                  # the power menu
 eva-ctl status | reload | quit
 ```
 
-The sections you are most likely to touch:
+The sections you will probably touch:
 
-| section | for |
+| section | |
 |---|---|
-| `[figures]` | which workspaces have the figure, the stage share, the herald, classes to ignore (games) |
-| `[wallpapers]` | the pool, fixed wallpapers per workspace, named workspaces, other monitors |
-| `[bar]` | height, tags, resource readouts, now playing, tray, click actions, extra buttons |
-| `[overlays]` | eye-catch (`soft` or `cut`), EMERGENCY band, Alt+Tab, power menu, pulses, berserk |
-| `[power]` | what lock / sleep / log out / reboot / shut down run |
-| `[hyprland]` | the binds, gaps, rounding, border style and speed |
-| `[theme]` | the active theme, the eww palette file, files to retheme or swap on a switch |
+| `[figures]` | which workspaces get the figure, how much space it takes, the herald, window classes to ignore (games) |
+| `[wallpapers]` | the pool, a fixed wallpaper per workspace, named workspaces, other monitors |
+| `[bar]` | height, number of tags, the readouts, now playing, tray, what clicks do, extra buttons |
+| `[overlays]` | the workspace card, the EMERGENCY band, Alt+Tab, the power menu, the pulses, the berserk threshold |
+| `[power]` | the commands behind lock / sleep / log out / reboot / shut down |
+| `[hyprland]` | the keybinds, gaps, border style and speed |
 
-## Extras: the apps around the desk
+### Colours and fonts
 
-`eva-extras install [--theme eva] kitty starship nvim firefox discord spotify shell` (or `all`):
+The palette and fonts are defined once, by role, in `eva_desk/themes.py`. Everything else reads from
+there, including the GTK theme generator, the eww palette file and the app themes below. If you want a
+different colour scheme, copy the `eva` entry, change the values, put your own figure and wallpapers in
+`assets/themes/<name>/`, and switch with `eva-ctl theme <name>`. Files you list under `[theme] retheme_files`
+are rewritten colour by colour on a switch.
 
-| extra | what you get | needs |
+The pictures were generated locally with stable-diffusion.cpp. The scripts are in `tools/gen/` if you want
+to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the herald,
+`wallpaper.py` maps a picture onto the palette, `build_theme_assets.py` packs it all.
+
+## Other apps
+
+`eva-extras install kitty starship nvim firefox discord spotify shell`, or `all`, writes matching themes for:
+
+| | what | needs |
 |---|---|---|
-| `kitty` | colours and a custom tab bar: numbered title blocks, a MAGI clock | `include ./vibe.conf` and `tab_bar_style custom` in kitty.conf |
-| `starship` | the prompt as a NERV readout: `SYNC·branch`, `T+2s`, `MAGI·hh:mm`, a 緊急 EMERGENCY block after a failed command | starship |
-| `nvim` | a colorscheme, a status line of title blocks, tab colours and a dashboard (AstroNvim / heirline / snacks) | Neovim with those plugins, or just `:colorscheme vibe` |
-| `firefox` | userChrome and userContent: title-block tabs, a MAGI url bar, monolith menus, the field and Unit-01 on new tabs | restart Firefox |
-| `discord` | a Vencord theme | [Vencord](https://vencord.dev) |
-| `spotify` | a Spicetify theme: colours first, square corners, the hazard progress bar | [spicetify-cli](https://spicetify.app) |
-| `shell` | zsh syntax-highlighting colours and a vivid LS_COLORS theme | source `~/.config/zsh/vibe.zsh` |
+| kitty | colours and a tab bar with numbered title blocks | `include ./eva.conf` and `tab_bar_style custom` in kitty.conf |
+| starship | a prompt in the same style: `SYNC·main`, `T+2s`, `MAGI·23:10`, an EMERGENCY block after a failed command | starship |
+| nvim | colorscheme, status line, tab colours and dashboard | AstroNvim with heirline and snacks, or just the colorscheme |
+| firefox | userChrome and userContent: tabs, url bar, menus, new tab page | restart Firefox |
+| discord | a theme | [Vencord](https://vencord.dev) |
+| spotify | a theme | [spicetify](https://spicetify.app) |
+| shell | zsh highlighting colours and a vivid theme for `ls` | source the file from `.zshrc` |
 
-Files are written with backups next to them and registered in `[theme] retheme_files`, so a theme switch
-keeps them in step. Extras are authored in the eva theme and rewritten role by role for any other.
+Every file it writes gets a backup next to it.
 
-## Lock and login screens
+## Lock and login
 
-- **hyprlock**: `./install.sh --lock` or `tools/hyprlock_setup.py` renders the SEELE council for each monitor
-  and writes `~/.config/hypr/hyprlock.conf` (title-card clock, MAGI readouts, the IDENTIFY · PILOT input, a
-  backup of your old file). The power menu's LOCK runs it. Pair it with hypridle for auto-lock.
-- **ReGreet** (greetd): `tools/login_screen.py` renders the background for your main monitor and
-  `greeter/regreet-eva.css` styles the form. `sudo greeter/install-greeter.sh eva` installs both under
-  `/etc/greetd` and `/usr/share/backgrounds` and backs up what it replaces.
+**hyprlock.** `./install.sh --lock` (or `tools/hyprlock_setup.py`) renders a background for each monitor and
+writes `~/.config/hypr/hyprlock.conf`. Your old file is backed up. The power menu's LOCK runs `hyprlock`;
+pair it with hypridle if you want it on idle.
+
+**ReGreet.** `tools/login_screen.py` renders the background and `greeter/regreet.css` styles the form.
+`sudo greeter/install-greeter.sh` copies both into `/etc/greetd` and `/usr/share/backgrounds`, with backups.
 
 ## FAQ
 
-**Does it work with `hyprland.conf`?** No. eva-desk hooks into Hyprland's Lua config (`hyprland.lua`) for the
-border styles, workspace rules and binds.
+**Can I use it with `hyprland.conf`?** No. The border styles, workspace rules and binds are done through
+Hyprland's Lua config.
 
-**Something looks off on my monitor.** Run `eva-desk --render /tmp/eva` and look at the PNGs: that is
-exactly what the daemon draws, at 3440x1440. Then `eva-desk --config ~/.config/eva-desk/eva.toml --render`
-with your settings. The log is `~/.local/state/eva-desk/eva-desk.log`.
+**Something looks wrong on my screen.** `eva-desk --render /tmp/eva` writes PNGs of exactly what the daemon
+draws. If those look right, the problem is in Hyprland; if not, open an issue with the PNG. The log is at
+`~/.local/state/eva-desk/eva-desk.log`.
 
-**The figure is in the way.** `Super+Shift+B` hides it and gives the space back; `boxer = 0` in `[figures]`
-removes it for good. Games (`ignore_classes`) never see it.
+**The figure takes too much room.** `Super+Shift+B` hides it. `figure = 0` under `[figures]` removes it, and
+`stage = 0.2` makes it narrower.
 
-**The motions are too much.** `[overlays]`: `eyecatch_style = "soft"` is the quiet card (default), `"cut"`
-the loud one; every motion has its own switch, and `berserk = 0` stops the stage from reacting to load.
+**Too much movement.** `[overlays]` has a switch for each motion. `eyecatch_style = "cut"` is a louder
+version of the workspace card, `"soft"` the default, `eyecatch = false` turns it off. `berserk = 0` stops the
+stage reacting to load.
 
-**Can I use my own wallpapers?** Yes: any image path in `[wallpapers] pool`, per workspace under
-`[wallpapers.workspaces]`, and `[wallpapers.static]` for other monitors.
+**My game is on the figure's workspace.** Fullscreen games are ignored: the classes in
+`[figures] ignore_classes` never get a figure, an eye-catch or a pulse.
 
-**Uninstall?** `./uninstall.sh` (keeps your config; `--purge` removes it and the fonts).
+**Uninstall.** `./uninstall.sh`. Add `--purge` to also delete the config and fonts.
 
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests        # offline logic tests, no compositor needed
-eva-desk --render DIR                         # every scene, overlay, the bar and the launcher as PNGs
+python3 -m unittest discover -s tests     # logic tests, no compositor needed
+eva-desk --render DIR                      # every scene, overlay, the bar and the launcher as PNGs
 HL_VERIFY=1 Hyprland --verify-config -c ~/.config/hypr/hyprland.lua
 ```
 
-The daemon is Python with GTK 4 and gtk4-layer-shell; figures and overlays are drawn with cairo and animated
-on the GPU through GTK snapshots. Nothing needs a running Hyprland to be rendered or tested.
+Python, GTK 4 and gtk4-layer-shell. Drawing is cairo, animation is done with GTK snapshots on the GPU.
 
 ## Credits
 
-- Fonts from Google Fonts under the OFL / Apache licences: Shippori Mincho B1, Share Tech Mono, Anton,
-  Archivo Black, Cinzel, Special Elite, Doto, VT323.
-- The GTK and icon themes are recoloured from the Everforest GTK theme and the Everforest (Suru++) icon
-  theme, which must be installed to build them.
-- The figures and wallpapers were generated locally (stable-diffusion.cpp, Z-Image-Turbo) and are included
-  under this repository's MIT licence.
-- *Neon Genesis Evangelion* is the work of Hideaki Anno, Gainax and Khara. This is a fan-made look and is not
-  affiliated with or endorsed by them.
+Fonts from Google Fonts: Shippori Mincho B1, Share Tech Mono, Rubik, Doto (OFL). The GTK and icon
+themes are recoloured copies of the Everforest GTK theme and the Everforest (Suru++) icon theme.
+The figures and wallpapers were generated with stable-diffusion.cpp and Z-Image-Turbo.
 
-<p align="center"><sub>SOUND ONLY</sub></p>
+Neon Genesis Evangelion belongs to Hideaki Anno, Gainax and Khara. This is a fan project.
+
+MIT licence.

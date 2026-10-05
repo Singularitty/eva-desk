@@ -11,7 +11,7 @@ PURGE=0
 if [ -f "$HYPR" ] && grep -qF "eva-desk/hypr/eva.lua" "$HYPR"; then
     cp "$HYPR" "$HYPR.bak-eva-uninstall-$(date +%Y%m%d-%H%M%S)"
     # --follow-symlinks: keep hyprland.lua a symlink if it is one (dotfiles)
-    sed -i --follow-symlinks -e '/-- eva-desk (added by eva-desk\/install.sh/d' -e '/eva-desk\/hypr\/vibe\.lua/d' "$HYPR"
+    sed -i --follow-symlinks -e '/-- eva-desk (added by eva-desk\/install.sh/d' -e '/eva-desk\/hypr\/eva\.lua/d' -e '/vibe-desk\/hypr\/vibe\.lua/d' "$HYPR"
     echo ":: unhooked from $HYPR"
 fi
 rm -f "$HOME/.local/bin/eva-desk" "$HOME/.local/bin/eva-ctl" "$HOME/.local/bin/eva-extras"

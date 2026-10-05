@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build a theme's runtime assets (assets/themes/<name>/) from its generation folder.
 
-usage: tools/build_theme_assets.py THEME GEN_DIR [--boxer cut/figure.png] [--herald RIG_DIR] [--wallpapers]
-  --boxer      a silhouette RGBA (from tools/gen/sil.py): potrace-cleaned into figures/boxer.png
+usage: tools/build_theme_assets.py THEME GEN_DIR [--figure cut/figure.png] [--herald RIG_DIR] [--wallpapers]
+  --figure      a silhouette RGBA (from tools/gen/sil.py): potrace-cleaned into figures/unit01.png
   --herald     a rig folder (from tools/gen/rig.py): body.png, arm_l.png, arm_r.png, rig.json copied in
   --wallpapers every GEN_DIR/final/wp/png/*.png (3440x1440 from wallpaper.py) with the theme's halftone dots baked in
 """
@@ -29,13 +29,13 @@ A = ROOT / "assets/themes" / name
 ink = tuple(int(theme["colors"]["ink"][i:i + 2], 16) for i in (0, 2, 4))
 ns["INK"] = ink
 
-if "--boxer" in args:
+if "--figure" in args:
     out = A / "figures"
     out.mkdir(parents=True, exist_ok=True)
-    f = Path(args[args.index("--boxer") + 1])
+    f = Path(args[args.index("--figure") + 1])
     a = np.asarray(Image.open(f).convert("RGBA"))[..., 3]
-    img = vectorize(a, 1, out / "boxer.png")
-    print("boxer", img.size)
+    img = vectorize(a, 1, out / "figure.png")
+    print("figure", img.size)
 
 if "--herald" in args:
     out = A / "herald"

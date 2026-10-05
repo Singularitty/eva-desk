@@ -1,17 +1,16 @@
 # eva-desk settings. After editing: `eva-ctl apply`.
 
 [theme]
-name = "eva"              # eva: Unit-01 purple / acid green (the NERV look); vibe: wine / bone / gold (Persona fight card)
-                          # `eva-ctl theme eva` switches and applies. Each theme has its own figures and wallpapers
-                          # under assets/themes/<name>/, border styles, fonts and GTK theme (gtk/make-gtk-theme.py --theme eva).
+name = "eva"              # the only bundled theme; add your own in eva_desk/themes.py + assets/themes/<name>/
+                          # `eva-ctl theme <name>` switches and applies (palette, fonts, figures, wallpapers, borders, GTK).
 eww_palette = ""          # write the theme's scss variables here on apply, e.g. "~/.config/eww/css/_vibe-palette.scss"
 retheme_files = []        # files with hand-written theme colours, rewritten on a switch: ["~/.config/dunst/dunstrc"]
 swap_files = []           # files with a per-theme version beside them, copied in on apply: ["~/.config/starship.toml"] uses starship.eva.toml
 after_apply = []          # commands after apply: ["dunstctl reload", "eww reload"]
 gsettings = true          # also point gsettings (gtk-theme, icon-theme) at the theme's GTK theme: Wayland GTK apps read that
 
-# [themes.eva.wallpapers]  # any section can be overridden per theme (used while that theme is active)
-# pool = ["unit01_moon", "lilith", "tokyo3", "sachiel", "cross", "lance"]
+# [themes.<name>.wallpapers]  # any section can be overridden per theme (used while that theme is active)
+# pool = ["my_wallpaper"]
 
 [general]
 # Monitors that get the bar, the figures and the wallpapers: Hyprland output names ("DP-1") or
@@ -19,13 +18,11 @@ gsettings = true          # also point gsettings (gtk-theme, icon-theme) at the 
 main_monitors = []
 
 [figures]
-boxer = "all"          # "all" numbered workspaces, one workspace id, a list like [1, 3], or 0 = no boxer
+figure = "all"          # "all" numbered workspaces, one workspace id, a list like [1, 3], or 0 = no figure
 workspaces = 10        # how many numbered workspaces "all" covers
-knight = 0             # optional: workspace for the seated knight (0 = no knight)
 herald = true          # the herald plays when a window is maximised (Super+Return)
-boxer_stage = "auto"   # share of the screen width kept free next to the windows for the figure:
+stage = "auto"   # share of the screen width kept free next to the windows for the figure:
                        # "auto" = 0.30 on ultrawides, 0.24 on 16:9 / 16:10, 0.20 on squarer screens; or a number
-knight_stage = "auto"  # ... and for the seated knight
 herald_ms = 360        # length of the herald's arm sweep
 # windows that never count (games go fullscreen; the figures stay out of their way)
 ignore_classes = ["^steam_app_", "^gamescope$"]
@@ -36,12 +33,11 @@ daemon = "auto"        # auto | awww | swww | none
 transition = "fade"
 duration = 0.9
 shuffle_minutes = 20   # reshuffle the pool across workspaces (0 = never)
-# bundled (vibe): ring, sword, eclipse, emperor, crt, helmets, wine, rooftop; or a path to any image
-# bundled (eva): unit01_moon, unit01_hill, lilith, tokyo3, cross, sachiel, lance, atfield, train, geofront, plug
-pool = ["sword", "eclipse", "emperor", "crt", "helmets", "wine", "rooftop"]
+# bundled: unit01_moon, unit01_hill, lilith, tokyo3, cross, sachiel, lance, atfield, train, geofront, plug; or a path to any image
+pool = ["unit01_moon", "lilith", "tokyo3", "cross", "sachiel", "lance", "atfield", "geofront", "train", "plug"]
 
 [wallpapers.workspaces]   # fixed wallpapers per workspace id
-1 = "ring"
+1 = "unit01_hill"
 
 [wallpapers.named]        # named workspaces: an image, or "#rrggbb" for a solid colour
 # scratch = "#000000"
@@ -111,13 +107,13 @@ search_url = "https://duckduckgo.com/?q={}"
 
 [hyprland]
 maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)
-launcher_bind = "SUPER + Space"   # this key opens the vibe launcher ("" = leave it alone)
-boxer_toggle_bind = "SUPER + SHIFT + B"   # boxer on / off (his reserved space goes with him)
-side_bind = "SUPER + D"           # dock the focused window into the boxer's space (again: back to the tiles)
+launcher_bind = "SUPER + Space"   # this key opens the eva-desk launcher ("" = leave it alone)
+figure_toggle_bind = "SUPER + SHIFT + B"   # figure on / off (his reserved space goes with him)
+side_bind = "SUPER + D"           # dock the focused window into the figure's space (again: back to the tiles)
 screenshot_bind = "Print"   # re-pointed at the themed screenshot tool
 alttab_bind = "ALT + Tab"   # re-pointed at the cast strip (overlays.alttab)
 power_bind = "SUPER + M"    # re-pointed at the power menu (overlays.power)
-style = "card"                    # border style off the figure workspaces: card | halo | iron
+style = "card"                    # border style: card (lilac rule, purple drop) | halo (green glow) | iron (dark glow)
 rounding = 0
 gaps_in = 4
 gaps_out = 8

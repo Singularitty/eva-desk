@@ -33,7 +33,7 @@ local STYLES = opt("styles", nil) or {
         shadow = { enabled = true, sharp = false, range = 40, render_power = 2, offset = { 0, 0 },
                    color = "rgba(e86a4a8c)", color_inactive = "rgba(e86a4a30)" },
     },
-    -- Iron: slow dark reds with an ember glow (the knight's workspace)
+    -- Iron: slow dark tones with a soft glow
     iron = {
         size = 6,
         colors = { "rgb(3a1a20)", "rgb(8e1b33)", "rgb(1c1012)", "rgb(5c0f22)", "rgb(3a1a20)" },
@@ -59,7 +59,6 @@ end
 local function style_for(ws)
     if ws then
         if opt("herald", true) and ws.has_fullscreen and ws.fullscreen_mode == 1 then return "halo" end
-        if opt("knight", 0) > 0 and ws.id == opt("knight", 0) then return "iron" end
     end
     return opt("style", "card")
 end
@@ -80,11 +79,11 @@ restyle()
 hl.on("workspace.active", function(ws) apply_style(style_for(ws)) end)
 
 ---------------------------------------------------------------- the stage: room for the figures
--- tiled windows keep to the left so the boxer / knight have their part of the screen
+-- tiled windows keep to the left so the figure has its part of the screen
 -- The rules only match while the workspace is on the main monitor (selector "r[N-N]m[NAME]"): a separate
 -- rule from your own `workspace = N, monitor = ...` binding, so toggling the stage never switches that
 -- binding off, and the stage gap is never applied to a smaller side monitor.
-local stage_rules = {}            -- workspace id -> { rule = WorkspaceRule with the stage gap, boxer = bool }
+local stage_rules = {}            -- workspace id -> { rule = WorkspaceRule with the stage gap, figure = bool }
 
 local function main_monitor()
     local wanted, best = opt("main_monitors", {}), nil
@@ -98,13 +97,13 @@ local function main_monitor()
     return nil
 end
 
-local function stage(ws, px, is_boxer, mon)
+local function stage(ws, px, is_figure, mon)
     if ws and ws > 0 and px and px > 0 and not stage_rules[ws] then
         local g = opt("gaps_out", 8)
         stage_rules[ws] = {
             rule = hl.workspace_rule({ workspace = string.format("r[%d-%d]m[%s]", ws, ws, mon),
                                        gaps_out = { top = g, right = px, bottom = g, left = g } }),
-            boxer = is_boxer,
+            figure = is_figure,
         }
     end
 end
@@ -112,24 +111,23 @@ end
 local function build_stages()
     local mon = main_monitor()
     if not mon then return false end           -- monitors not known yet: try again once Hyprland is up
-    for _, ws in ipairs(opt("boxer_workspaces", {})) do stage(ws, opt("boxer_stage_px", 0), true, mon) end
-    stage(opt("knight", 0), opt("knight_stage_px", 0), false, mon)
+    for _, ws in ipairs(opt("figure_workspaces", {})) do stage(ws, opt("stage_px", 0), true, mon) end
     return true
 end
 local stages_built = build_stages()
 
--- the boxer on/off switch (Super+Shift+B through the daemon); the daemon keeps it in this file
-local function boxer_saved()
-    local f = io.open(HOME .. "/.local/state/eva-desk/boxer")
+-- the figure on/off switch (Super+Shift+B through the daemon); the daemon keeps it in this file
+local function figure_saved()
+    local f = io.open(HOME .. "/.local/state/eva-desk/figure")
     if not f then return true end
     local s = f:read("*l")
     f:close()
     return s ~= "off"
 end
-BOXER_ON = boxer_saved()
+FIGURE_ON = figure_saved()
 
 local function is_maximised(ws) return ws ~= nil and ws.has_fullscreen and ws.fullscreen_mode == 1 end
-local function stage_active(entry) return (not entry.boxer) or BOXER_ON end
+local function stage_active(entry) return (not entry.figure) or FIGURE_ON end
 
 -- Hyprland sizes a maximised window like a lone tiled one, workspace gaps included, so on a stage
 -- workspace it would stop at the stage. Lift the stage while a window there is maximised.
@@ -156,8 +154,8 @@ local function toggle_maximise()
     hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized" }))
 end
 
----------------------------------------------------------------- side window (boxer mode)
--- Super+D puts the focused window into the boxer's space as a floating column; he steps aside on that
+---------------------------------------------------------------- side window (figure mode)
+-- Super+D puts the focused window into the figure's space as a floating column; he steps aside on that
 -- workspace (the daemon sees the "eva-side" tag). Super+D again sends it back to the tiles.
 local SIDE_TAG = "eva-side"
 
@@ -190,8 +188,8 @@ local function toggle_side()
         return
     end
     local ws, mon = w.workspace, w.monitor
-    local px = opt("boxer_stage_px", 0)
-    if not BOXER_ON or not ws or not mon or px <= 0 or not stage_rules[ws.id] then return end
+    local px = opt("stage_px", 0)
+    if not FIGURE_ON or not ws or not mon or px <= 0 or not stage_rules[ws.id] then return end
     for _, o in ipairs(hl.get_windows()) do          -- one side window per workspace: swap
         if o.address ~= w.address and o.workspace and o.workspace.id == ws.id and is_side(o) then unside(o) end
     end
@@ -205,10 +203,10 @@ local function toggle_side()
     hl.dispatch(hl.dsp.window.tag({ tag = "+" .. SIDE_TAG }))
 end
 
--- called by the daemon (`hyprctl eval "EVA_SET_BOXER(true)"`) when the boxer is switched on / off
-function EVA_SET_BOXER(on)
-    BOXER_ON = on and true or false
-    if not BOXER_ON then                              -- no boxer, no side column: back to the tiles
+-- called by the daemon (`hyprctl eval "EVA_SET_FIGURE(true)"`) when the figure is switched on / off
+function EVA_SET_FIGURE(on)
+    FIGURE_ON = on and true or false
+    if not FIGURE_ON then                              -- no figure, no side column: back to the tiles
         local active = hl.get_active_window()
         for _, w in ipairs(hl.get_windows()) do
             if is_side(w) then unside(w) end
@@ -237,9 +235,9 @@ if launcher_key then
     pcall(hl.unbind, launcher_key)            -- same key, now opens the vibe launcher
     hl.bind(launcher_key, hl.dsp.exec_cmd(BIN .. "eva-ctl launcher"))
 end
-local boxer_key = opt("boxer_toggle_bind", nil)
-if boxer_key then
-    hl.bind(boxer_key, hl.dsp.exec_cmd(BIN .. "eva-ctl boxer toggle"))
+local figure_key = opt("figure_toggle_bind", nil)
+if figure_key then
+    hl.bind(figure_key, hl.dsp.exec_cmd(BIN .. "eva-ctl figure toggle"))
 end
 local shot_key = opt("screenshot_bind", nil)
 if shot_key then

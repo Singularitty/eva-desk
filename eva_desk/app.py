@@ -39,8 +39,8 @@ class App(Gtk.Application):
             return
         self.stages, self.bars, self.gdk_of = {}, {}, {}
         self.prev, self.urgent_ws = {}, set()
-        self.boxer_set = set(config.boxer_workspaces(cfg))
-        self.boxer_on = config.boxer_enabled()
+        self.figure_set = set(config.figure_workspaces(cfg))
+        self.figure_on = config.figure_enabled()
         self.pending_impact = False
         self.refresh_id = None
         self.minute = None
@@ -112,7 +112,7 @@ class App(Gtk.Application):
                       "moveworkspacev2", "renameworkspace", "minimized"}
 
     def _event(self, name, data):
-        if name == "vibedesk-disconnected":
+        if name == "evadesk-disconnected":
             print("eva-desk: Hyprland went away", flush=True)
             self.quit()
         elif name in ("monitoraddedv2", "monitorremovedv2", "monitoradded", "monitorremoved"):
@@ -199,18 +199,16 @@ class App(Gtk.Application):
         return [max(mons, key=lambda m: m["width"] * m["height"])]
 
     def figure_for(self, ws_id):
-        if ws_id and self.boxer_on and ws_id in getattr(self, "boxer_set", set()):
-            return "boxer"
-        if ws_id and ws_id == self.cfg["figures"]["knight"]:
-            return "knight"
+        if ws_id and self.figure_on and ws_id in getattr(self, "figure_set", set()):
+            return "figure"
         return None
 
-    def set_boxer(self, on):
-        self.boxer_on = bool(on)
-        config.set_boxer_enabled(self.boxer_on)
+    def set_figure(self, on):
+        self.figure_on = bool(on)
+        config.set_figure_enabled(self.figure_on)
         if self.hypr.lua:                              # the reserved space comes and goes with him
-            self.hypr.eval_lua(f"if EVA_SET_BOXER then EVA_SET_BOXER({'true' if self.boxer_on else 'false'}) end")
-        self.pending_impact = self.boxer_on
+            self.hypr.eval_lua(f"if EVA_SET_FIGURE then EVA_SET_FIGURE({'true' if self.figure_on else 'false'}) end")
+        self.pending_impact = self.figure_on
         GLib.timeout_add(120, lambda: (self.schedule(0), False)[1])   # after Hyprland re-tiled
 
     def _sync_components(self, mains):
@@ -273,13 +271,13 @@ class App(Gtk.Application):
                 scene = None
             elif fs == 1 and cfg["figures"]["herald"]:
                 scene = "herald"
-            elif figure and wins and not sides:                  # a side window: the boxer steps aside
+            elif figure and wins and not sides:                  # a side window: the figure steps aside
                 scene = figure
             else:
                 scene = None
             prev = self.prev.get(name, {})
             same_ws = prev.get("ws") == wid
-            impact = (scene in ("boxer", "knight") and same_ws and prev.get("scene") != scene
+            impact = (scene == "figure" and same_ws and prev.get("scene") != scene
                       and (prev.get("count", 0) == 0 or prev.get("side") or getattr(self, "pending_impact", False)))
             herald_fresh = scene == "herald" and same_ws and prev.get("scene") != "herald"
             stage = self.stages.get(name)
@@ -441,23 +439,23 @@ class App(Gtk.Application):
             o.show({"app": "eva-desk", "summary": " ".join(args) or "EMERGENCY test", "body": "the band plays once, ACK closes it"})
             return "ok"
         if cmd == "impact" and stage:
-            stage.show(args[0] if args else "boxer", impact=True)
+            stage.show(args[0] if args else "figure", impact=True)
             GLib.timeout_add(2500, lambda: (self.schedule(0), self.prev.clear(), False)[2])
             return "ok"
         if cmd == "herald" and stage:
             stage.show("herald", herald_fresh=True)
             GLib.timeout_add(3000, lambda: (self.prev.clear(), self.schedule(0), False)[2])
             return "ok"
-        if cmd == "boxer":
-            want = {"on": True, "off": False}.get(args[0] if args else "toggle", not self.boxer_on)
-            self.set_boxer(want)
-            return "boxer " + ("on" if self.boxer_on else "off")
+        if cmd == "figure":
+            want = {"on": True, "off": False}.get(args[0] if args else "toggle", not self.figure_on)
+            self.set_figure(want)
+            return "figure " + ("on" if self.figure_on else "off")
         if cmd == "bar":
             for b in self.bars.values():
                 b.set_visible(not args or args[0] != "hide")
             return "ok"
         if cmd == "status":
-            return json.dumps({"monitors": list(self.stages), "state": self.prev, "boxer": self.boxer_on,
+            return json.dumps({"monitors": list(self.stages), "state": self.prev, "figure": self.figure_on,
                                "wallpapers": self.walls.bin if self.walls else None,
                                "lua": self.hypr.lua})
         if cmd == "reload":

@@ -3,8 +3,8 @@
 
   eva-ctl launcher              toggle the launcher (bound to the launcher key)
   eva-ctl shot                  the themed screenshot tool (bound to Print)
-  eva-ctl boxer [on|off|toggle] the boxer and his reserved space (Super+Shift+B toggles)
-  eva-ctl impact boxer|knight   play an impact frame on the main monitor (to try it)
+  eva-ctl figure [on|off|toggle] the figure and his reserved space (Super+Shift+B toggles)
+  eva-ctl impact figure|knight   play an impact frame on the main monitor (to try it)
   eva-ctl herald                play the herald sweep (to try it)
   eva-ctl alttab                the cast strip (bound to Alt+Tab)
   eva-ctl power                 the Third Impact power menu (bound to Super+M)

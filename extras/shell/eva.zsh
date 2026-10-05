@@ -1,4 +1,4 @@
-# vibe colours for the shell (loaded at the end of ~/.zshrc)
+# eva-desk colours for the shell (loaded at the end of ~/.zshrc)
 
 # autosuggestions: dim grey ghost text
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#5a4b7a'
@@ -27,8 +27,8 @@ ZSH_HIGHLIGHT_STYLES[redirection]='fg=#ff8a45'
 ZSH_HIGHLIGHT_STYLES[comment]='fg=#5a4b7a,italic'
 ZSH_HIGHLIGHT_STYLES[arg0]='fg=#ebe6f7'
 
-# file colours (vibe version of the vivid theme)
-command -v vivid >/dev/null && export LS_COLORS="$(vivid generate vibe)"
+# file colours (the eva vivid theme)
+command -v vivid >/dev/null && export LS_COLORS="$(vivid generate eva)"
 
 # completion menu in matching colours
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"

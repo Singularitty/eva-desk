@@ -52,7 +52,6 @@ def apply_theme(theme):
 apply_theme(config.current_theme())
 config.on_theme(apply_theme)
 
-SKEW = math.tan(math.radians(14))
 
 
 def rgba(cr, c, alpha=None):
@@ -86,48 +85,8 @@ def forget(name):
 
 
 # ---------------------------------------------------------------- shapes
-def parallelogram(cr, x, y, w, h, skew=SKEW):
-    """A box whose top edge is shifted right by h*skew (CSS skewX(-14deg) look)."""
-    s = h * skew / 2
-    cr.move_to(x + s, y)
-    cr.line_to(x + w + s, y)
-    cr.line_to(x + w - s, y + h)
-    cr.line_to(x - s, y + h)
-    cr.close_path()
-
-
-def skew_box(cr, x, y, w, h, fill, shadow=None, shadow_off=(0, 0), border=None, border_w=0, under=None, under_h=0):
-    if shadow:
-        parallelogram(cr, x + shadow_off[0], y + shadow_off[1], w, h)
-        rgba(cr, shadow)
-        cr.fill()
-    parallelogram(cr, x, y, w, h)
-    rgba(cr, fill)
-    cr.fill_preserve()
-    if border:
-        rgba(cr, border)
-        cr.set_line_width(border_w)
-        cr.set_line_join(cairo.LINE_JOIN_MITER)
-        cr.stroke()
-    else:
-        cr.new_path()
-    if under:
-        cr.save()
-        parallelogram(cr, x, y, w, h)
-        cr.clip()
-        cr.rectangle(x - h, y + h - under_h, w + 2 * h, under_h)
-        rgba(cr, under)
-        cr.fill()
-        cr.restore()
-
-
-def look():
-    """"card" (skewed tags, speed lines) or "nerv" (title-card blocks, hex fields, hazard stripes)."""
-    return THEME.get("look", "card")
-
-
 def block(cr, x, y, w, h, fill, shadow=None, shadow_off=(0, 0), border=None, border_w=0, under=None, under_h=0):
-    """A title-card block: a plain rectangle with the same options as skew_box (the nerv look)."""
+    """A title-card block: a plain rectangle with an optional hard shadow, border and underline."""
     if shadow:
         cr.rectangle(x + shadow_off[0], y + shadow_off[1], w, h)
         rgba(cr, shadow)
@@ -146,11 +105,6 @@ def block(cr, x, y, w, h, fill, shadow=None, shadow_off=(0, 0), border=None, bor
         cr.rectangle(x, y + h - under_h, w, under_h)
         rgba(cr, under)
         cr.fill()
-
-
-def tag_box(cr, x, y, w, h, fill, **kw):
-    """skew_box in the card look, block in the nerv look."""
-    (block if look() == "nerv" else skew_box)(cr, x, y, w, h, fill, **kw)
 
 
 def hazard(cr, x, y, w, h, a, b=None, period=28.0):
@@ -223,26 +177,6 @@ def hex_field(cr, w, h, cx, cy, r, line=None, fill=None, accent=None, rings=True
             cr.stroke()
 
 
-def speed_lines(cr, cx, cy, radius, a=None, b=None, fill_b=True):
-    """The impact-frame rays: per 10 degrees a 1.3 deg ray, gap, a 0.4 deg ray, gap (bone on ink by default)."""
-    a = BONE if a is None else a
-    b = INK if b is None and fill_b else b
-    if fill_b and b is not None:
-        rgba(cr, b)
-        cr.arc(cx, cy, radius, 0, 2 * math.pi)
-        cr.fill()
-    rgba(cr, a)
-    for k in range(36):
-        base = math.radians(k * 10)
-        for start, width in ((0.0, 1.3), (5.0, 0.4)):
-            t0, t1 = base + math.radians(start), base + math.radians(start + width)
-            cr.move_to(cx, cy)
-            cr.line_to(cx + radius * math.cos(t0), cy + radius * math.sin(t0))
-            cr.line_to(cx + radius * math.cos(t1), cy + radius * math.sin(t1))
-            cr.close_path()
-    cr.fill()
-
-
 def tint(cr, w, h, color, alpha, op=cairo.OPERATOR_MULTIPLY):
     cr.save()
     cr.set_operator(op)
@@ -303,35 +237,6 @@ def silhouette_mask(cr, mask, echo=18.0, color=None, echo_color=None):
         cr.mask_surface(mask, echo, 0)
     rgba(cr, color)
     cr.mask_surface(mask, 0, 0)
-
-
-def ember(cr, x, y, r, alpha=1.0):
-    e, hi = EMBER, hexc(THEME["colors"]["ember_hi"])
-    g = cairo.RadialGradient(x, y, 0, x, y, r * 3.2)
-    g.add_color_stop_rgba(0, e[0], e[1], e[2], 0.9 * alpha)
-    g.add_color_stop_rgba(0.3, e[0], e[1], e[2], 0.35 * alpha)
-    g.add_color_stop_rgba(1, e[0], e[1], e[2], 0)
-    cr.set_source(g)
-    cr.arc(x, y, r * 3.2, 0, 2 * math.pi)
-    cr.fill()
-    cr.set_source_rgba(hi[0], hi[1], hi[2], alpha)
-    cr.arc(x, y, r, 0, 2 * math.pi)
-    cr.fill()
-
-
-def sun(cr, cx, cy, r):
-    g = cairo.RadialGradient(cx, cy, 0, cx, cy, r)
-    c = THEME["colors"]
-    roles = THEME.get("sun", ["bone_hi", "gold_hi", "gold_glow", "coral"])
-    for stop, role in zip((0, 0.34, 0.58, 0.68), roles):
-        k = hexc(c[role])
-        g.add_color_stop_rgba(stop, k[0], k[1], k[2], 1)
-    k = hexc(c[roles[-1]])
-    g.add_color_stop_rgba(0.71, k[0], k[1], k[2], 0)
-    g.add_color_stop_rgba(1, k[0], k[1], k[2], 0)
-    cr.set_source(g)
-    cr.arc(cx, cy, r, 0, 2 * math.pi)
-    cr.fill()
 
 
 # ---------------------------------------------------------------- text

@@ -1,5 +1,5 @@
 -- eva-desk look for Neovim (authored in the eva theme; eva-desk-extras rethemes it): NERV status line (title-card blocks + MAGI readouts), title-card buffer tabs,
--- the dashboard as an episode card. Colours follow colors/vibe.lua (rethemed by `eva-ctl theme`).
+-- the dashboard as an episode card. Colours follow colors/eva.lua (rethemed by `eva-ctl theme`).
 local C = {
   ink = "#0a0612", ink_deep = "#050309", ink3 = "#1b1030", ink4 = "#2a1a48", claret = "#6a2fb8", red = "#a981ff",
   led = "#ff5a1f", coral = "#ff8a45", gold = "#7dff3f", gold_hi = "#c8ff9a", bone = "#ebe6f7", bone2 = "#b7aed0",

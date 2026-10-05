@@ -1,6 +1,7 @@
 """Themes: every colour, font and border style the desk uses, by role.
 
-A theme is a dict with the same keys as THEMES["vibe"]; `[theme] name = "..."` in eva.toml picks one.
+A theme is a dict with the same keys as THEMES["eva"]; `[theme] name = "..."` in eva.toml picks one.
+Add a theme by copying the eva entry and pointing assets/themes/<name>/ at its own figures and wallpapers.
 Assets (figures, herald rig, wallpapers) can be overridden per theme under assets/themes/<name>/.
 """
 import copy
@@ -8,60 +9,9 @@ import re
 
 THEMES = {}
 
-# ---------------------------------------------------------------- vibe: wine, bone and gold (Persona 5 / fight card)
-THEMES["vibe"] = {
-    "title": "Fight Card",
-    "look": "card",                # card: skewed tags, speed lines, staircase launcher
-    "colors": {
-        "ink": "0c0608", "ink_deep": "070304", "ink2": "140a0d", "ink3": "1c1012", "ink4": "2e1a1f", "ink5": "4a2a31",
-        "wine": "3b0a14", "wine_d": "2a0710",
-        "claret": "8e1b33", "claret_hi": "c4304b",        # accent 1: hard shadows, underlines, badges
-        "red": "e5475f",                                   # accent 1 as text on ink
-        "led": "ff4d3a", "coral": "e86a4a",                # urgent / hot
-        "gold": "c9a24a", "gold_hi": "e9d29a",             # accent 2: highlights, playing, the star
-        "bone": "efe4cf", "bone2": "b9ab92", "bone3": "8a7a68", "paper": "f4ede0",
-        "dim": "6a4a4e", "ember": "ff7a3a",
-        "echo": "8e1b33",                                  # the figures' offset trail (X2 treatment)
-        # extra tones used by the generated GTK theme, eww partials and dunst (same keys in every theme)
-        "rose": "b0708a", "slate": "7fa89a", "bone_hi": "f7efdd", "gold_glow": "ffd27a",
-        "iron_d": "5c0f22", "iron": "3a1a20", "well": "1f0a10", "sand": "a8977d",
-        "ember_hi": "ff825a", "ember_lo": "ff5a3a", "pink": "ee7a88",
-        # terminal / editor tones (kitty, nvim): the ANSI colours that are not desk roles, and diff backgrounds
-        "green": "8fa36a", "green_hi": "a9bd84", "blue": "7f9fb0", "blue_hi": "a0bccb", "cyan_hi": "9cc2b4",
-        "rose_hi": "c98ba3", "diff_add": "1a2412", "diff_change": "2a2010", "diff_text": "4a3a14",
-    },
-    "fonts": {
-        "display": "Anton", "display_weight": 400, "display_italic": True,
-        "title": "Archivo Black", "digits": "Doto", "body": "Rubik", "meta": "Special Elite", "accent": "Cinzel",
-    },
-    # the launcher (board AC2 "PAPER"): paper room, ink slab, red halftone
-    "launcher": {
-        "bg": "paper", "slab": "ink", "dots": ("claret", 0.16), "s1": "claret", "s2": "gold",
-        "q": [("bone", "ink", "display"), ("claret", "bone", "accent"), ("gold", "ink", "meta"), ("bone", "ink", "title")],
-        "cur": "bone", "top": ("bone", "ink"), "arrow": "claret",
-        "items": ["bone", "gold", "sand", "dim"],
-        "card": ("ink", "led", "bone", "bone2"), "cshadow": "claret",
-        "btn": [("ink", "bone"), ("claret", "bone"), ("gold", "ink")],
-    },
-    # Hyprland border + shadow styles (hypr/eva.lua), colours by role; "#rrggbbaa" adds alpha
-    "hypr": {
-        "inactive_border": "wine_d/aa",
-        "card": {"size": 4, "colors": ["bone", "bone2", "bone", "bone2", "bone"],
-                 "shadow": {"sharp": True, "range": 2, "power": 1, "offset": [14, 14], "color": "claret", "inactive": "claret/80"}},
-        "halo": {"size": 4, "colors": ["gold", "coral", "gold_glow", "claret", "gold"],
-                 "shadow": {"sharp": False, "range": 40, "power": 2, "offset": [0, 0], "color": "coral/8c", "inactive": "coral/30"}},
-        "iron": {"size": 6, "colors": ["iron", "claret", "ink3", "iron_d", "iron"],
-                 "shadow": {"sharp": False, "range": 50, "power": 2, "offset": [0, 0], "color": "claret/73", "inactive": "claret/26"}},
-    },
-    "gtk_theme": "Vibe-Dark",
-    "halftone": "bone",
-    "sun": ["bone_hi", "gold_hi", "gold_glow", "coral"],   # the herald's disc: core -> rim            # the wallpapers' baked dot screen
-}
-
 # ---------------------------------------------------------------- eva: Unit-01 purple, acid green, NERV orange
 THEMES["eva"] = {
     "title": "Evangelion",
-    "look": "nerv",                # nerv: title-card blocks, MAGI readouts, AT-field hexes, hazard stripes
     "colors": {
         "ink": "0a0612", "ink_deep": "050309", "ink2": "130b20", "ink3": "1b1030", "ink4": "2a1a48", "ink5": "44307a",
         "wine": "2b1450", "wine_d": "1c0d36",
@@ -85,9 +35,8 @@ THEMES["eva"] = {
     },
     # the launcher as an episode title card: black room, the query set as the title, cast list, monolith card
     "launcher": {
-        "bg": "ink_deep", "slab": "bone", "dots": ("claret", 0.22), "s1": "claret", "s2": "gold",
-        "q": [("ink", "bone", "display"), ("claret", "bone", "accent"), ("gold", "ink", "meta"), ("ink", "bone", "title")],
-        "cur": "gold", "top": ("bone", "ink"), "arrow": "gold",
+        "bg": "ink_deep", "slab": "bone",
+        "cur": "gold", "top": ("bone", "ink"),
         "items": ["bone", "bone2", "bone3", "dim"],
         "card": ("ink", "gold", "bone", "bone2"), "cshadow": "claret",
         "btn": [("bone", "ink"), ("claret", "bone"), ("gold", "ink")],
@@ -103,7 +52,6 @@ THEMES["eva"] = {
     },
     "gtk_theme": "Eva-Dark",
     "halftone": "bone",
-    "sun": [],                                             # no disc: the Eva just rises behind the window
 }
 
 DEFAULT = "eva"
@@ -159,7 +107,7 @@ def eww_scss(theme):
         "$v-icons: 'Material Symbols Rounded';",
         f"$v-display-weight: {f['display_weight']};",
         f"$v-display-style: {'italic' if f['display_italic'] else 'normal'};",
-        f"$v-look: {theme.get('look', 'card')};",
+        "$v-look: nerv;",
     ]
     return "\n".join(lines) + "\n"
 

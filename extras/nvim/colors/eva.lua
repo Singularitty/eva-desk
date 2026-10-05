@@ -1,7 +1,7 @@
--- vibe (eva): ink / lilac / Unit-01 purple / acid green, the same palette as the desktop; keywords purple, errors NERV orange.
+-- eva: the eva-desk palette for Neovim (rethemed by `eva-ctl theme`).
 vim.cmd.highlight("clear")
 if vim.fn.exists("syntax_on") == 1 then vim.cmd.syntax("reset") end
-vim.g.colors_name = "vibe"
+vim.g.colors_name = "eva"
 vim.o.termguicolors = true
 vim.o.background = "dark"
 

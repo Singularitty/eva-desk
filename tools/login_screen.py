@@ -47,7 +47,7 @@ cr.clip()
 cr.translate(W - stage, 0)
 d.hex_field(cr, stage, H, stage * 0.5, H * 0.45, H * 0.11)
 cr.restore()
-fig = d.image("figures/boxer.png")
+fig = d.image("figures/unit01.png")
 fh = H * 0.80
 fw = fh * fig.get_width() / fig.get_height()
 fx, fy = W - stage + (stage - fw) / 2, H - fh

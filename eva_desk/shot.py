@@ -1,4 +1,4 @@
-"""The screenshot tool, in the vibe look: the screen freezes into a dimmed halftone page and your pick
+"""The screenshot tool: the screen freezes into a dimmed halftone page and your pick
 becomes a manga panel (bone frame, ink outline, hard claret shadow, speed lines), then an impact frame fires.
 
 Drag = a region, click = the window under the cursor, F / Return = the whole monitor, Esc / right click = cancel.
@@ -76,19 +76,6 @@ def backdrop(frozen, w, h):
     return surf
 
 
-def speed_lines(cr, cx, cy, r_in, r_out, strength=1.0):
-    """Thin radial wedges around a panel, the impact-frame language at low volume."""
-    for i in range(72):
-        a = i * math.pi / 36 + (0.02 if i % 2 else 0)
-        wid = 0.005 if i % 3 else 0.002
-        cr.move_to(cx + r_in * math.cos(a), cy + r_in * math.sin(a))
-        cr.line_to(cx + r_out * math.cos(a - wid), cy + r_out * math.sin(a - wid))
-        cr.line_to(cx + r_out * math.cos(a + wid), cy + r_out * math.sin(a + wid))
-        cr.close_path()
-        d.rgba(cr, d.BONE if i % 4 == 0 else d.CLARET, min(1.0, (0.10 if i % 4 == 0 else 0.18) * strength))
-        cr.fill()
-
-
 class Shot:
     def __init__(self, app, cfg, hypr):
         self.app, self.cfg, self.hypr = app, cfg, hypr
@@ -101,7 +88,7 @@ class Shot:
             return "busy"
         if not shutil.which("grim"):
             return "grim is not installed"
-        self.tmp = Path(tempfile.mkdtemp(prefix="vibe-shot-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="eva-shot-"))
         gdk = monitors()
         mons = [m for m in (self.hypr.j("monitors") or []) if not m.get("disabled") and m["name"] in gdk]
         # freeze every monitor before anything of ours is on screen
@@ -288,16 +275,13 @@ class Shot:
         cr.rectangle(px - 6, py - 6, pw + 12, ph + 12)
         cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
         cr.clip()
-        if d.look() == "nerv":
-            # a hazard frame round the panel and a faint A.T. field cell behind it
-            k = 2.2 if t is not None else 1.0
-            d.hazard(cr, px - 18, py - 18, pw + 36, ph + 36, d.CLARET[:3] + (min(1.0, 0.55 * k),), None, period=28)
-            d.rgba(cr, d.GOLD, 0.35 * k)
-            cr.set_line_width(2)
-            cr.rectangle(px - 30, py - 30, pw + 60, ph + 60)
-            cr.stroke()
-        else:
-            speed_lines(cr, cx, cy, math.hypot(pw, ph) / 2 + 24, math.hypot(w, h), 2.2 if t is not None else 1.0)
+        # a hazard frame round the panel and a faint A.T. field line behind it
+        k = 2.2 if t is not None else 1.0
+        d.hazard(cr, px - 18, py - 18, pw + 36, ph + 36, d.CLARET[:3] + (min(1.0, 0.55 * k),), None, period=28)
+        d.rgba(cr, d.GOLD, 0.35 * k)
+        cr.set_line_width(2)
+        cr.rectangle(px - 30, py - 30, pw + 60, ph + 60)
+        cr.stroke()
         cr.restore()
         # hard claret shadow, the frozen picture at full brightness, bone frame with an ink outline
         off = 12
@@ -332,35 +316,27 @@ class Shot:
             d.draw_text(cr, lay, cx - tw / 2, cy - th / 2, d.BONE[:3] + (alpha,))
             return
         if label:
-            nerv = d.look() == "nerv"
-            lay = d.layout(cr, label, d.F_META, 15, spacing=2) if nerv else d.display(cr, label, 18)
+            lay = d.layout(cr, label, d.F_META, 15, spacing=2)
             tw, th = d.text_size(lay)
             bw, bh = tw + 28, th + 8
             ly = py - bh - 10 if py - bh - 10 > 4 else py + 10
             lx = min(max(4, px - 2), w - bw - 4)
-            d.tag_box(cr, lx, ly, bw, bh, d.BONE, shadow=d.CLARET, shadow_off=(4, 4))
+            d.block(cr, lx, ly, bw, bh, d.BONE, shadow=d.CLARET, shadow_off=(4, 4))
             d.draw_text(cr, lay, lx + (bw - tw) / 2, ly + (bh - th) / 2, d.INK)
 
     def _hint(self, cr, w, h):
-        nerv = d.look() == "nerv"
         text = "DRAG  ·  CLICK A WINDOW  ·  F WHOLE SCREEN  ·  SHIFT EDIT  ·  ESC"
-        lay = d.layout(cr, text, d.F_META, 15, spacing=3) if nerv else d.display(cr, text, 17)
+        lay = d.layout(cr, text, d.F_META, 15, spacing=3)
         tw, th = d.text_size(lay)
         bw, bh = tw + 40, th + 12
         bx, by = (w - bw) / 2, h - bh - 36
-        d.tag_box(cr, bx, by, bw, bh, d.INK, shadow=d.CLARET, shadow_off=(10, 10) if nerv else (5, 5), border=d.BONE, border_w=2)
-        d.draw_text(cr, lay, bx + (bw - tw) / 2, by + (bh - th) / 2, d.GOLD if nerv else d.BONE)
-        if nerv:
-            # title-card corner: 撮影 (capture) block with the MAGI readout under it
-            tag = d.layout(cr, "撮影 · SNAP", d.F_DISPLAY, 28, weight=d.DISPLAY_WEIGHT)
-            tw, th = d.text_size(tag)
-            d.block(cr, 36, 36, tw + 36, th + 10, d.BONE, shadow=d.CLARET, shadow_off=(8, 8))
-            d.draw_text(cr, tag, 36 + 18, 36 + 5, d.INK)
-            sub = d.layout(cr, "SCREEN FROZEN · PATTERN BLUE", d.F_META, 13, spacing=3)
-            d.draw_text(cr, sub, 36, 36 + th + 10 + 16, d.GOLD)
-            d.hazard(cr, 0, h - 14, w, 14, d.CLARET, d.INK, period=40)
-            return
-        tag = d.display(cr, "SNAP", 28)
+        d.block(cr, bx, by, bw, bh, d.INK, shadow=d.CLARET, shadow_off=(10, 10), border=d.BONE, border_w=2)
+        d.draw_text(cr, lay, bx + (bw - tw) / 2, by + (bh - th) / 2, d.GOLD)
+        # title-card corner: 撮影 (capture) block with the MAGI readout under it
+        tag = d.layout(cr, "撮影 · SNAP", d.F_DISPLAY, 28, weight=d.DISPLAY_WEIGHT)
         tw, th = d.text_size(tag)
-        d.skew_box(cr, 36, 36, tw + 36, th + 10, d.BONE, shadow=d.CLARET, shadow_off=(6, 6))
+        d.block(cr, 36, 36, tw + 36, th + 10, d.BONE, shadow=d.CLARET, shadow_off=(8, 8))
         d.draw_text(cr, tag, 36 + 18, 36 + 5, d.INK)
+        sub = d.layout(cr, "SCREEN FROZEN · PATTERN BLUE", d.F_META, 13, spacing=3)
+        d.draw_text(cr, sub, 36, 36 + th + 10 + 16, d.GOLD)
+        d.hazard(cr, 0, h - 14, w, 14, d.CLARET, d.INK, period=40)

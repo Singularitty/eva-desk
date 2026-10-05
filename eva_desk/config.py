@@ -28,15 +28,13 @@ DEFAULTS = {
         "main_monitors": [],
     },
     "figures": {
-        "boxer": "all",           # "all" (workspaces 1..workspaces), a workspace id, a list, or 0 = off
+        "figure": "all",           # "all" (workspaces 1..workspaces), a workspace id, a list, or 0 = off
         "workspaces": 10,         # how many numbered workspaces "all" covers
-        "knight": 0,              # optional seated knight (workspace id), off by default
         "herald": True,           # herald plays when a window is maximised
-        "boxer_stage": "auto",    # share of the monitor width kept free for the figure: "auto" = 0.30 on ultrawides,
+        "stage": "auto",    # share of the monitor width kept free for the figure: "auto" = 0.30 on ultrawides,
                                   # 0.24 on 16:9 / 16:10, 0.20 on squarer screens; or a number
-        "knight_stage": "auto",   # ... and for the (wider, seated) knight
         "herald_ms": 360,         # length of the arm sweep
-        "boxer_entry_ms": 450,    # length of the boxer's entrance
+        "figure_entry_ms": 450,    # length of the figure's entrance
         "ignore_classes": ["^steam_app_", "^gamescope$"],
     },
     "wallpapers": {
@@ -45,8 +43,8 @@ DEFAULTS = {
         "transition": "fade",
         "duration": 0.9,
         "shuffle_minutes": 20,
-        "pool": ["sword", "eclipse", "emperor", "crt", "helmets", "wine", "rooftop"],
-        "workspaces": {"1": "ring"},
+        "pool": ["unit01_moon", "lilith", "tokyo3", "cross", "sachiel", "lance", "atfield", "geofront", "train", "plug"],
+        "workspaces": {"1": "unit01_hill"},
         "named": {},              # named workspace -> image or "#rrggbb"
         "static": {},             # other monitors: description substring -> image
     },
@@ -102,8 +100,8 @@ DEFAULTS = {
     "hyprland": {
         "maximize_bind": ["SUPER + RETURN"],   # one key or a list; fills the screen under the bar
         "launcher_bind": "SUPER + Space",
-        "boxer_toggle_bind": "SUPER + SHIFT + B",   # turn the boxer (and his reserved space) on / off
-        "side_bind": "SUPER + D",                    # dock the focused window into the boxer's space
+        "figure_toggle_bind": "SUPER + SHIFT + B",   # turn the figure (and his reserved space) on / off
+        "side_bind": "SUPER + D",                    # dock the focused window into the figure's space
         "screenshot_bind": "Print",                  # re-pointed at the themed screenshot tool
         "alttab_bind": "ALT + Tab",                  # re-pointed at the cast strip when overlays.alttab is on
         "power_bind": "SUPER + M",                   # re-pointed at the power menu when overlays.power is on
@@ -168,7 +166,7 @@ def theme_dir():
 
 
 def asset_path(rel):
-    """A bundled asset by relative name ("figures/boxer.png"): the active theme's copy if it has one."""
+    """A bundled asset by relative name ("figures/unit01.png"): the active theme's copy if it has one."""
     p = theme_dir() / rel
     return p if p.exists() else ASSETS / rel
 
@@ -187,19 +185,17 @@ def asset(name, folder="wallpapers"):
     return str(ASSETS / folder / name)
 
 
-def stage_share(cfg, width=None, height=None, key="boxer_stage"):
+def stage_share(cfg, width=None, height=None, key="stage"):
     """The stage's share of the monitor width: a number from the config, or "auto" by aspect ratio."""
     v = cfg["figures"].get(key, "auto")
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return float(v)
     aspect = (width / height) if width and height else 2.39
-    if key == "knight_stage":
-        return 0.42 if aspect >= 2.0 else 0.34 if aspect >= 1.6 else 0.30
     return 0.30 if aspect >= 2.0 else 0.24 if aspect >= 1.6 else 0.20
 
 
-def boxer_workspaces(cfg):
-    b, n = cfg["figures"]["boxer"], int(cfg["figures"].get("workspaces", 10))
+def figure_workspaces(cfg):
+    b, n = cfg["figures"]["figure"], int(cfg["figures"].get("workspaces", 10))
     if b == "all":
         return list(range(1, n + 1))
     if isinstance(b, bool) or not b:
@@ -209,17 +205,17 @@ def boxer_workspaces(cfg):
     return [int(x) for x in b if int(x) > 0]
 
 
-def boxer_enabled():
+def figure_enabled():
     """The Super+Shift+B toggle, shared with hypr/eva.lua through a state file."""
     try:
-        return (STATE_DIR / "boxer").read_text().strip() != "off"
+        return (STATE_DIR / "figure").read_text().strip() != "off"
     except OSError:
         return True
 
 
-def set_boxer_enabled(on):
+def set_figure_enabled(on):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    (STATE_DIR / "boxer").write_text("on\n" if on else "off\n")
+    (STATE_DIR / "figure").write_text("on\n" if on else "off\n")
 
 
 def _keys(v):
@@ -231,8 +227,7 @@ def write_lua_settings(cfg, monitor_width=None, monitor_height=None):
     f, h = cfg["figures"], cfg["hyprland"]
     width = monitor_width or 3440
     height = monitor_height or (round(width / 2.39) if monitor_width else 1440)
-    boxer_px = int(round(width * stage_share(cfg, width, height)))
-    knight_px = int(round(width * stage_share(cfg, width, height, "knight_stage")))
+    stage_px = int(round(width * stage_share(cfg, width, height)))
 
     def lua_str(s):
         return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -255,12 +250,10 @@ def write_lua_settings(cfg, monitor_width=None, monitor_height=None):
         *style_lines,
         "    },",
         f"    inactive_border = {lua_str(inactive)},",
-        "    boxer_workspaces = {" + ", ".join(str(w) for w in boxer_workspaces(cfg)) + "},",
+        "    figure_workspaces = {" + ", ".join(str(w) for w in figure_workspaces(cfg)) + "},",
         "    main_monitors = {" + ", ".join(lua_str(m) for m in cfg["general"]["main_monitors"]) + "},",
-        f"    knight = {int(f['knight'] or 0)},",
         f"    herald = {'true' if f['herald'] else 'false'},",
-        f"    boxer_stage_px = {boxer_px},",
-        f"    knight_stage_px = {knight_px},",
+        f"    stage_px = {stage_px},",
         f"    style = {lua_str(h['style'])},",
         f"    rounding = {int(h['rounding'])},",
         f"    gaps_in = {int(h['gaps_in'])},",
@@ -268,7 +261,7 @@ def write_lua_settings(cfg, monitor_width=None, monitor_height=None):
         f"    border_speed = {max(0, min(100, int(h['border_speed'])))},",   # Hyprland caps animation speed at 100
         "    maximize_binds = {" + ", ".join(lua_str(k) for k in _keys(h["maximize_bind"])) + "},",
         f"    launcher_bind = {lua_str(h['launcher_bind']) if cfg['launcher']['enabled'] and h['launcher_bind'] else 'nil'},",
-        f"    boxer_toggle_bind = {lua_str(h['boxer_toggle_bind']) if h.get('boxer_toggle_bind') else 'nil'},",
+        f"    figure_toggle_bind = {lua_str(h['figure_toggle_bind']) if h.get('figure_toggle_bind') else 'nil'},",
         f"    side_bind = {lua_str(h['side_bind']) if h.get('side_bind') else 'nil'},",
         f"    screenshot_bind = {lua_str(h['screenshot_bind']) if cfg['shot']['enabled'] and h.get('screenshot_bind') else 'nil'},",
         f"    alttab_bind = {lua_str(h['alttab_bind']) if cfg['overlays'].get('alttab') and h.get('alttab_bind') else 'nil'},",

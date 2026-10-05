@@ -50,7 +50,7 @@ class Hypr:
         """Lua-configured Hyprland refuses legacy `keyword`/`dispatch` calls ("non-legacy parsers")."""
         if self._lua is None:
             try:
-                self._lua = "non-legacy" in self.request("keyword vibedesk:probe 0")
+                self._lua = "non-legacy" in self.request("keyword evadesk:probe 0")
             except OSError:
                 self._lua = False
         return self._lua
@@ -94,7 +94,7 @@ class Hypr:
             except GLib.Error:
                 line = None
             if line is None:                       # Hyprland went away
-                on_event("vibedesk-disconnected", "")
+                on_event("evadesk-disconnected", "")
                 return
             name, _, data = line.partition(">>")
             try:

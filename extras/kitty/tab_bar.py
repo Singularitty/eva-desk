@@ -1,7 +1,7 @@
 # kitty custom tab bar, Eva desk look: title-card blocks for tabs ("01 KITTY" lilac for the active one, the
 # others with a purple underline), a MAGI readout on the right (tab count and the clock). Set by kitty.conf:
 #   tab_bar_style custom   (this file lives next to kitty.conf)
-# Colours follow vibe.conf (rethemed by `eva-ctl theme`).
+# Colours follow eva.conf (rethemed by `eva-ctl theme`).
 from datetime import datetime
 
 from kitty.fast_data_types import Screen, get_options
