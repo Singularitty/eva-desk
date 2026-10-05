@@ -10,7 +10,6 @@
   <a href="https://github.com/Singularitty/eva-desk/blob/main/LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licence-MIT-7dff3f?labelColor=0a0612&style=flat-square"></a>
   <img alt="Hyprland 0.56+" src="https://img.shields.io/badge/Hyprland-0.56%2B%20(Lua%20config)-6a2fb8?labelColor=0a0612&style=flat-square">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-ebe6f7?labelColor=0a0612&style=flat-square">
-  <a href="https://aur.archlinux.org/packages/eva-desk-git"><img alt="AUR" src="https://img.shields.io/badge/AUR-eva--desk--git-ff5a1f?labelColor=0a0612&style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -39,7 +38,7 @@ It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the class
 
 ```sh
 git clone https://github.com/Singularitty/eva-desk && cd eva-desk
-./install.sh --extras all --lock --gtk      # or: yay -S eva-desk-git && eva-desk-setup
+./install.sh --extras all --lock --gtk
 ```
 
 Hyprland reloads and the daemon starts. Then:
@@ -118,8 +117,10 @@ over your launcher key, `Print`, `Alt+Tab` and `Super+M`. All of them can be cha
 
 ### Arch
 
+There is a PKGBUILD in `packaging/`, so the whole thing can be a pacman package:
+
 ```sh
-yay -S eva-desk-git        # or paru; the PKGBUILD is in packaging/
+cd packaging && makepkg -si
 eva-desk-setup --extras all --lock --gtk
 ```
 

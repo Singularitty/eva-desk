@@ -1,4 +1,4 @@
-# Maintainer: Singularitty <luispedroferreirinha@gmail.com>
+# eva-desk as a pacman package: cd packaging && makepkg -si
 pkgname=eva-desk-git
 pkgver=r18.f690b62
 pkgrel=1
