@@ -3,12 +3,16 @@
 #   ./install.sh             install a copy into ~/.local/share/eva-desk
 #   ./install.sh --link      install by symlinking this checkout (edit here, `eva-ctl reload` to see it)
 #   ./install.sh --no-hypr   do not touch hyprland.lua (add the dofile line yourself)
-#   ./install.sh --no-fonts  skip the font download (Shippori Mincho B1, Share Tech Mono, Doto, Rubik and friends)
+#   ./install.sh --no-fonts  skip the font download (Shippori Mincho B1, Share Tech Mono, Doto, Rubik)
 #   ./install.sh --theme NAME      start with another theme from eva_desk/themes.py (default: eva)
 #   ./install.sh --extras all      also theme kitty, starship, neovim and the shell
 #                                  (or a comma list: --extras kitty,starship); see `eva-extras list`
 #   ./install.sh --lock            set up hyprlock (SEELE council backgrounds per monitor + hyprlock.conf)
 #   ./install.sh --gtk             build the GTK + icon themes (needs an Everforest GTK/icon theme installed)
+#   ./install.sh --user            the per-user part only, for a package install (/usr/share/eva-desk):
+#                                  config, settings.lua, the hyprland.lua line; takes --theme/--extras/--lock/--gtk
+#   ./install.sh --system DESTDIR PREFIX   the files only, for packaging: PREFIX/share/eva-desk, PREFIX/bin,
+#                                  fonts from --fonts DIR into PREFIX/share/fonts/eva-desk (used by the PKGBUILD)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -21,10 +25,13 @@ HYPR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.lua"
 MARK='-- eva-desk (added by eva-desk/install.sh; remove these two lines to unhook it)'
 LINE='dofile(os.getenv("HOME") .. "/.local/share/eva-desk/hypr/eva.lua")'
 
-LINK=0 HOOK=1 GET_FONTS=1 THEME="" EXTRAS="" LOCK=0 GTK=0
+LINK=0 HOOK=1 GET_FONTS=1 THEME="" EXTRAS="" LOCK=0 GTK=0 USER_ONLY=0 SYSTEM="" SYS_PREFIX="" FONT_SRC=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --link) LINK=1 ;;
+        --user) USER_ONLY=1; GET_FONTS=0 ;;
+        --system) SYSTEM="$2/$3"; SYS_PREFIX="$3"; shift 2 ;;
+        --fonts) FONT_SRC="$2"; shift ;;
         --no-hypr) HOOK=0 ;;
         --no-fonts) GET_FONTS=0 ;;
         --theme) THEME="$2"; shift ;;
@@ -33,7 +40,7 @@ while [ $# -gt 0 ]; do
         --extras=*) EXTRAS="${1#--extras=}" ;;
         --lock) LOCK=1 ;;
         --gtk) GTK=1 ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -41,6 +48,30 @@ done
 
 say()  { printf '\033[1;31m::\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------- 0. packaging: files only, no user steps
+if [ -n "$SYSTEM" ]; then
+    SHARE="$SYSTEM/share/eva-desk"
+    say "installing the files to $SHARE"
+    mkdir -p "$SHARE" "$SYSTEM/bin"
+    for d in eva_desk assets hypr bin tools extras gtk greeter config; do cp -r "$HERE/$d" "$SHARE/$d"; done
+    cp "$HERE/install.sh" "$HERE/uninstall.sh" "$HERE/LICENSE" "$SHARE/"
+    find "$SHARE" -name __pycache__ -type d -prune -exec rm -rf {} +
+    chmod +x "$SHARE/bin/"* "$SHARE/tools/"*.py "$SHARE/install.sh" "$SHARE/uninstall.sh"
+    for b in eva-desk eva-ctl eva-extras; do ln -sf "../share/eva-desk/bin/$b" "$SYSTEM/bin/$b"; done
+    printf '#!/bin/sh\nexec %s/share/eva-desk/install.sh --user "$@"\n' "$SYS_PREFIX" > "$SYSTEM/bin/eva-desk-setup"
+    chmod +x "$SYSTEM/bin/eva-desk-setup"
+    if [ -n "$FONT_SRC" ]; then
+        mkdir -p "$SYSTEM/share/fonts/eva-desk"
+        cp "$FONT_SRC"/*.ttf "$SYSTEM/share/fonts/eva-desk/"
+    fi
+    exit 0
+fi
+# a package install: the program stays where it is, only the per-user pieces are written
+if [ "$USER_ONLY" = 1 ]; then
+    PREFIX="$HERE"
+    LINE="dofile(\"$HERE/hypr/eva.lua\")"
+fi
 
 # ---------------------------------------------------------------- 1. dependencies
 say "checking dependencies"
@@ -87,8 +118,14 @@ if [ -f "$HYPR" ] && grep -qF "vibe-desk/hypr/vibe.lua" "$HYPR"; then
     sed -i --follow-symlinks -e 's|vibe-desk/hypr/vibe\.lua|eva-desk/hypr/eva.lua|' -e 's|-- vibe-desk (added by vibe-desk/install.sh|-- eva-desk (added by eva-desk/install.sh|' "$HYPR"
     say "hyprland.lua: the dofile line now points at eva-desk"
 fi
+mkdir -p "$CONF"
+if [ "$USER_ONLY" = 1 ]; then
+    say "program: $PREFIX"
+    EVA_DESK_BIN="$(command -v eva-desk || echo "$PREFIX/bin/eva-desk")"
+    BIN="$(dirname "$EVA_DESK_BIN")"
+else
 say "installing to $PREFIX"
-mkdir -p "$PREFIX" "$BIN" "$CONF"
+mkdir -p "$PREFIX" "$BIN"
 for d in eva_desk assets hypr bin tools extras gtk greeter; do
     rm -rf "${PREFIX:?}/$d"
     if [ "$LINK" = 1 ]; then ln -s "$HERE/$d" "$PREFIX/$d"; else cp -r "$HERE/$d" "$PREFIX/$d"; fi
@@ -101,6 +138,7 @@ ln -sf "$PREFIX/bin/eva-extras" "$BIN/eva-extras"
 for old in vibe-desk vibe-ctl; do [ -L "$BIN/$old" ] || [ ! -e "$BIN/$old" ] && ln -sf "$PREFIX/bin/${old/vibe/eva}" "$BIN/$old"; done
 [ -e "$DATA/vibe-desk" ] && [ ! -L "$DATA/vibe-desk" ] && mv "$DATA/vibe-desk" "$DATA/vibe-desk.old-$(date +%Y%m%d)"
 [ -e "$DATA/vibe-desk" ] || ln -s "$PREFIX" "$DATA/vibe-desk"
+fi
 if [ -f "$CONF/eva.toml" ]; then
     say "keeping your $CONF/eva.toml"
 else
@@ -132,15 +170,12 @@ if [ "$GET_FONTS" = 1 ]; then
             rm -f "$FONTS/$file.part"; warn "could not download $file"
         fi
     done <<'EOF'
-Anton-Regular.ttf ofl/anton/Anton-Regular.ttf
-ArchivoBlack-Regular.ttf ofl/archivoblack/ArchivoBlack-Regular.ttf
-Cinzel.ttf ofl/cinzel/Cinzel%5Bwght%5D.ttf
-SpecialElite-Regular.ttf apache/specialelite/SpecialElite-Regular.ttf
 Doto.ttf ofl/doto/Doto%5BROND,wght%5D.ttf
-VT323-Regular.ttf ofl/vt323/VT323-Regular.ttf
 ShipporiMinchoB1-ExtraBold.ttf ofl/shipporiminchob1/ShipporiMinchoB1-ExtraBold.ttf
 ShipporiMinchoB1-Bold.ttf ofl/shipporiminchob1/ShipporiMinchoB1-Bold.ttf
 ShareTechMono-Regular.ttf ofl/sharetechmono/ShareTechMono-Regular.ttf
+Rubik.ttf ofl/rubik/Rubik%5Bwght%5D.ttf
+Rubik-Italic.ttf ofl/rubik/Rubik-Italic%5Bwght%5D.ttf
 EOF
     [ "$got" = 1 ] && fc-cache -f "$FONTS" >/dev/null 2>&1 || true
     say "fonts in $FONTS (OFL / Apache, from Google Fonts)"
@@ -153,6 +188,7 @@ if [ "$HOOK" = 1 ]; then
     if [ -f "$HYPR" ]; then
         if grep -qF "eva-desk/hypr/eva.lua" "$HYPR"; then
             say "hyprland.lua already loads eva-desk"
+            grep -qF "$LINE" "$HYPR" || warn "  but from another path; it should be: $LINE"
         else
             cp "$HYPR" "$HYPR.bak-eva-$(date +%Y%m%d-%H%M%S)"
             printf '\n%s\n%s\n' "$MARK" "$LINE" >> "$HYPR"
@@ -183,4 +219,7 @@ if [ "$GTK" = 1 ]; then
 fi
 
 say "done. Hyprland reloads its config by itself and eva.lua starts the daemon."
+if [ "$USER_ONLY" = 1 ] && ! fc-list 2>/dev/null | grep -q "Shippori Mincho B1"; then
+    warn "fontconfig does not see the fonts yet: run fc-cache -f"
+fi
 say "settings: $CONF/eva.toml, then run: eva-ctl apply   (try: eva-ctl impact figure)"

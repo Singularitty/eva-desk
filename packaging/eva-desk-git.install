@@ -1,0 +1,11 @@
+post_install() {
+    cat <<'MSG'
+:: eva-desk is installed under /usr/share/eva-desk. To set it up for your user:
+     eva-desk-setup                 # config, settings.lua, the line in hyprland.lua
+     eva-desk-setup --extras all --lock --gtk
+   Hyprland reloads its config and the daemon starts. Needs the Lua config (hyprland.lua).
+MSG
+}
+post_upgrade() {
+    echo ":: eva-desk updated: run 'eva-ctl apply' (or 'eva-ctl reload') to pick it up"
+}

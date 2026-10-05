@@ -1,0 +1,56 @@
+# Maintainer: Singularitty <luispedroferreirinha@gmail.com>
+pkgname=eva-desk-git
+pkgver=r18.f690b62
+pkgrel=1
+pkgdesc="A Neon Genesis Evangelion desktop for Hyprland: bar, launcher, screenshots, wallpapers and Unit-01 behind your windows"
+arch=('any')
+url="https://github.com/Singularitty/eva-desk"
+license=('MIT')
+depends=('hyprland' 'python>=3.11' 'python-gobject' 'python-cairo' 'gtk4' 'gtk4-layer-shell')
+optdepends=('awww: workspace wallpapers (or swww)'
+            'grim: screenshots'
+            'wl-clipboard: screenshots to the clipboard'
+            'playerctl: now playing in the bar'
+            'wireplumber: volume in the bar'
+            'hyprlock: the lock screen'
+            'python-pillow: render the lock and login backgrounds'
+            'kitty: the kitty theme (eva-extras)'
+            'starship: the prompt theme (eva-extras)'
+            'greetd-regreet: the login screen')
+makedepends=('git')
+install=eva-desk-git.install
+provides=('eva-desk')
+conflicts=('eva-desk')
+# the fonts come from Google Fonts at a pinned commit (OFL)
+_gf="https://raw.githubusercontent.com/google/fonts/7085eb89a950e85db5b166b7a58d414544b4140c"
+source=("$pkgname::git+https://github.com/Singularitty/eva-desk.git"
+        "Doto.ttf::$_gf/ofl/doto/Doto%5BROND,wght%5D.ttf"
+        "ShipporiMinchoB1-ExtraBold.ttf::$_gf/ofl/shipporiminchob1/ShipporiMinchoB1-ExtraBold.ttf"
+        "ShipporiMinchoB1-Bold.ttf::$_gf/ofl/shipporiminchob1/ShipporiMinchoB1-Bold.ttf"
+        "ShareTechMono-Regular.ttf::$_gf/ofl/sharetechmono/ShareTechMono-Regular.ttf"
+        "Rubik.ttf::$_gf/ofl/rubik/Rubik%5Bwght%5D.ttf"
+        "Rubik-Italic.ttf::$_gf/ofl/rubik/Rubik-Italic%5Bwght%5D.ttf")
+sha256sums=('SKIP'
+            '6f4fe7d37853b91df3698daa84cde2dbe1c9695d88c986e6510134910337d426'
+            'bee99a242f32128e8d6a4acff2b3f1742cd42ea90748758e6e10456871887e76'
+            'd20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25a'
+            '9ceab1f87414829af259c0f537573ae03ef7dd3147c0b27a36a1a0beb6732677'
+            '1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88'
+            '08c6c4018a5ada8b517407b46897e46cf6ebb106853fbd3e89addb51d3b59c62')
+
+pkgver() {
+    cd "$pkgname"
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+check() {
+    cd "$pkgname"
+    python -m unittest discover -s tests
+}
+
+package() {
+    cd "$pkgname"
+    ./install.sh --system "$pkgdir" /usr --fonts "$srcdir"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

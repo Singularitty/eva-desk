@@ -7,12 +7,21 @@
 <p align="center">A Neon Genesis Evangelion desktop for Hyprland.</p>
 
 <p align="center">
-  <a href="#install">Install</a> ·
+  <a href="https://github.com/Singularitty/eva-desk/blob/main/LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licence-MIT-7dff3f?labelColor=0a0612&style=flat-square"></a>
+  <img alt="Hyprland 0.56+" src="https://img.shields.io/badge/Hyprland-0.56%2B%20(Lua%20config)-6a2fb8?labelColor=0a0612&style=flat-square">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-ebe6f7?labelColor=0a0612&style=flat-square">
+  <a href="https://aur.archlinux.org/packages/eva-desk-git"><img alt="AUR" src="https://img.shields.io/badge/AUR-eva--desk--git-ff5a1f?labelColor=0a0612&style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
+  <a href="#install">Install</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="#other-apps">Other apps</a> ·
   <a href="#lock-and-login">Lock and login</a> ·
-  <a href="#faq">FAQ</a>
+  <a href="#faq">FAQ</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -25,6 +34,27 @@ something is wrong. Nothing animates for long. Every effect is a single cut or p
 It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
 
 <p align="center"><img src="docs/demo.gif" alt="a tour: the figure enters, the launcher, a workspace switch, Alt+Tab, the power menu, a warning band, maximise, the screenshot tool" width="100%"></p>
+
+## Quick start
+
+```sh
+git clone https://github.com/Singularitty/eva-desk && cd eva-desk
+./install.sh --extras all --lock --gtk      # or: yay -S eva-desk-git && eva-desk-setup
+```
+
+Hyprland reloads and the daemon starts. Then:
+
+| key | |
+|---|---|
+| `Super+Space` | launcher |
+| `Super+Return` | maximise the window, Unit-01 behind it |
+| `Alt+Tab` | window switcher |
+| `Super+M` | power menu |
+| `Print` | screenshot |
+| `Super+D` | dock a window into the figure's space |
+| `Super+Shift+B` | hide / show the figure |
+
+Everything is in `~/.config/eva-desk/eva.toml`; `eva-ctl apply` after editing. `./uninstall.sh` puts things back.
 
 ## Features
 
@@ -86,6 +116,19 @@ over your launcher key, `Print`, `Alt+Tab` and `Super+M`. All of them can be cha
 
 ## Install
 
+### Arch
+
+```sh
+yay -S eva-desk-git        # or paru; the PKGBUILD is in packaging/
+eva-desk-setup --extras all --lock --gtk
+```
+
+The package puts the program in `/usr/share/eva-desk` and the fonts in `/usr/share/fonts/eva-desk`.
+`eva-desk-setup` does the per-user part: it writes `~/.config/eva-desk/eva.toml` and adds the `dofile` line to
+your `hyprland.lua`. It takes the same `--theme`, `--extras`, `--lock` and `--gtk` flags as the script below.
+
+### Any distribution
+
 ```sh
 git clone https://github.com/Singularitty/eva-desk
 cd eva-desk
@@ -117,7 +160,8 @@ script, turn them off, or disable eva-desk's with `[bar] enabled = false` and `[
 Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
 
 Optional: `awww` or `swww` for wallpapers, `wpctl` for volume, `playerctl` for now playing, `grim` and
-`wl-copy` for screenshots, `hyprlock` for the lock screen.
+`wl-copy` for screenshots, `hyprlock` for the lock screen, Pillow for rendering the lock and login backgrounds.
+The fonts (Shippori Mincho B1, Share Tech Mono, Rubik, Doto) are downloaded by the installer.
 
 ```sh
 # Arch
@@ -176,9 +220,9 @@ different colour scheme, copy the `eva` entry, change the values, put your own f
 `assets/themes/<name>/`, and switch with `eva-ctl theme <name>`. Files you list under `[theme] retheme_files`
 are rewritten colour by colour on a switch.
 
-The pictures were generated locally with stable-diffusion.cpp. The scripts are in `tools/gen/` if you want
-to make your own figure: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the maximise figure,
-`wallpaper.py` maps a picture onto the palette, `build_theme_assets.py` packs it all.
+The figure was generated locally with stable-diffusion.cpp. The scripts are in `tools/gen/` if you want
+to make your own: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the maximise figure,
+`build_theme_assets.py` packs it all.
 
 ## Other apps
 
@@ -248,11 +292,25 @@ HL_VERIFY=1 Hyprland --verify-config -c ~/.config/hypr/hyprland.lua
 
 Python, GTK 4 and gtk4-layer-shell. Drawing is cairo, animation is done with GTK snapshots on the GPU.
 
+## Contributing
+
+Issues and pull requests are welcome. Some things that would help:
+
+- **Screenshots of your setup.** Open a discussion or an issue with a picture; other monitors and other
+  wallpapers show what the theme can do better than mine can.
+- **Other figures and palettes.** A theme is one entry in `eva_desk/themes.py` plus a figure cutout and
+  wallpapers in `assets/themes/<name>/`. Unit-02, Unit-00, or something that is not Evangelion at all.
+- **A `hyprland.conf` port.** The Lua hook does border styles, workspace rules and binds; most of it could be
+  generated as classic config too.
+- **Packages** for other distributions. The Arch PKGBUILD in `packaging/` shows what goes where.
+
+Before sending code, run the tests and `eva-desk --render DIR` and look at the PNGs.
+
 ## Credits
 
 Fonts from Google Fonts: Shippori Mincho B1, Share Tech Mono, Rubik, Doto (OFL). The GTK and icon
 themes are recoloured copies of the Everforest GTK theme and the Everforest (Suru++) icon theme.
-The figures and wallpapers were generated with stable-diffusion.cpp and Z-Image-Turbo.
+The figure was generated with stable-diffusion.cpp and Z-Image-Turbo.
 
 Neon Genesis Evangelion belongs to Hideaki Anno, Gainax and Khara. This is a fan project.
 

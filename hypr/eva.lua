@@ -1,6 +1,6 @@
 -- eva-desk: the Hyprland half of the theme (look, stage gaps, binds, autostart).
 -- Load it at the END of hyprland.lua (install.sh adds this line):
---   dofile(os.getenv("HOME") .. "/.local/share/eva-desk/hypr/eva.lua")
+--   dofile(os.getenv("HOME") .. "/.local/share/eva-desk/hypr/eva.lua")   -- or /usr/share/eva-desk/hypr/eva.lua
 -- Settings come from ~/.config/eva-desk/settings.lua, generated from eva.toml by `eva-ctl apply`.
 -- Nothing here removes your binds: it adds Super+Return (maximise) and re-points the launcher and screenshot keys.
 
@@ -13,7 +13,12 @@ local function opt(key, default)
     return v
 end
 EVA_DESK = true                      -- lets other config files know the theme is active
+-- eva-ctl lives in ~/.local/bin after install.sh, or on PATH after a package install (AUR)
 local BIN = HOME .. "/.local/bin/"
+do
+    local f = io.open(BIN .. "eva-ctl")
+    if f then f:close() else BIN = "" end
+end
 
 ---------------------------------------------------------------- border + shadow styles
 -- The active theme's colours come from settings.lua (`styles`); these are the wine / bone / gold defaults.
