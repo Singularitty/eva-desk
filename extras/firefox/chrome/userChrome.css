@@ -46,8 +46,13 @@
 .tab-context-line { background: var(--eva-green) !important; }
 
 /* the url bar as a MAGI line */
-#urlbar-background { background: var(--eva-ink-deep) !important; border: 1px solid var(--eva-line2) !important; border-radius: 0 !important; box-shadow: none !important; }
-#urlbar[focused] > #urlbar-background { border-color: var(--eva-green) !important; box-shadow: 3px 3px 0 0 var(--eva-purple) !important; }
+#urlbar-background, #urlbar > .urlbar-background, .smartbar > .urlbar-background {
+  background: var(--eva-ink-deep) !important; border: 1px solid var(--eva-line2) !important; border-radius: 0 !important; box-shadow: none !important; outline: none !important;
+}
+#urlbar[focused] > #urlbar-background, #urlbar[focused] > .urlbar-background, #urlbar[open] > .urlbar-background, #urlbar:focus-within > .urlbar-background {
+  border-color: var(--eva-green) !important; box-shadow: 3px 3px 0 0 var(--eva-purple) !important; outline: none !important;
+}
+#urlbar > .urlbar-background::before { display: none !important; }
 #urlbar-input, #urlbar-input::placeholder, #searchbar { font-family: var(--eva-mono), monospace !important; letter-spacing: 1px; font-size: 13px !important; }
 #identity-box, #identity-icon-box { border-radius: 0 !important; }
 #identity-icon-label, .urlbar-page-action label { font-family: var(--eva-mono), monospace !important; font-size: 10px !important; letter-spacing: 3px; text-transform: uppercase; color: var(--eva-green) !important; }
