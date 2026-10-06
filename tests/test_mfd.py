@@ -32,9 +32,23 @@ class Widgets(unittest.TestCase):
         self.assertEqual(s(2.0), 1.0)
 
     def test_stagger(self):
-        self.assertEqual(self.w.stagger(0, 0.5), 0.5)
-        self.assertEqual(self.w.stagger(1, 0.0), 0.0)
-        self.assertAlmostEqual(self.w.stagger(1, 1.0), (380 - 120) / 380)
+        st = self.w.stagger
+        self.assertEqual(st(0, 0.0, 5), 0)
+        self.assertEqual(st(0, 0.6, 5), 1)
+        self.assertEqual(st(4, 0.4, 5), 0)                 # the last section starts at 40 %
+        self.assertEqual(st(4, 1.0, 5), 1)                 # ...and is fully open at the end
+        self.assertAlmostEqual(st(2, 0.5, 5), (0.5 - 0.2) / 0.6)
+        for t in (0.0, 0.3, 0.6, 0.9):
+            self.assertAlmostEqual(st(0, t, 1), max(0.0, min(1.0, t / 0.6)))
+
+    def test_every_section_opens_by_the_end(self):
+        for n in (1, 2, 5, 9):
+            self.assertEqual([self.w.stagger(i, 1.0, n) for i in range(n)], [1] * n)
+
+    def test_selected_block_clears_the_sub_line(self):
+        bx, by, bw, bh = self.w.selected_block(10, 20, 80, 17)
+        self.assertLessEqual(by + bh, self.w.sub_y(20, 17))
+        self.assertLess(by, 20)                            # still frames the label
 
     def test_rows_hit_map_and_drawing(self):
         import cairo
@@ -200,9 +214,6 @@ class Progress(unittest.TestCase):
         self.assertEqual(_progress(0.3, False), 0.3)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Sound(unittest.TestCase):
     def setUp(self):
@@ -246,6 +257,78 @@ class Sound(unittest.TestCase):
         self.assertTrue(all(h[2] - h[0] > 300 for h in bars))            # the bar keeps its width
         self.assertEqual(len(sections), 5)
 
+    def test_screens_are_content_sized_and_stacked(self):
+        import cairo
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
+        cr = cairo.Context(surf)
+        hits, sections = self.sound.draw_sound(cr, 0, 0, 1100, 1300, self.m, False)
+        extra = self.sound._screen_extra(cr)
+        self.assertLessEqual(sections[0][1], extra + 2 * self.sound.ROW_H + self.sound.GAP)   # two sinks
+        for (y0, h0), (y1, _) in zip(sections, sections[1:]):
+            self.assertAlmostEqual(y0 + h0, y1)                                             # stacked, no holes
+        self.assertAlmostEqual(sections[-1][0] + sections[-1][1], 1300)                     # the snap covers the rest
+        rows = {(si, ri) for si in range(4) for ri in range(len(self.m.sections[si]["rows"]))}
+        self.assertEqual(rows - {h[4] for h in hits}, set())                               # every row fits its screen
+
+    def test_screens_shrink_when_crowded(self):
+        import cairo
+        state = dict(self.state, apps=[dict(self.state["apps"][0], index=200 + i) for i in range(40)])
+        m = self.sound.SoundModel(state, {"dnd": False, "night": False, "power": "balanced"})
+        m.sel = (2, 39)
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 900)
+        hits, sections = self.sound.draw_sound(cairo.Context(surf), 0, 0, 1100, 900, m, False)
+        self.assertLessEqual(sections[-1][0] + sections[-1][1], 900 + 1)
+        self.assertIn((2, 39), [h[4] for h in hits])                                        # the selection stays in view
+
+    def test_held_steps_accumulate_until_levels_report(self):
+        self.m.sel = (0, 0)                                              # the monitor, at 68
+        self.assertEqual(self.m.action("right"), [("set_volume", "sink", 50, 73)])
+        self.assertEqual(self.m.action("right"), [("set_volume", "sink", 50, 78)])
+        self.m.levels({"sink50": {"v": 70, "m": False}})                 # the report clears the pending step
+        self.assertEqual(self.m.action("right"), [("set_volume", "sink", 50, 75)])
+        self.assertEqual(self.m.set_from_bar(0, 0, 0.2), [("set_volume", "sink", 50, 20)])
+        self.assertEqual(self.m.action("left"), [("set_volume", "sink", 50, 15)])
+
+    def _struct(self, state=None):
+        """`audiostate --struct`: the layout without volume or mute."""
+        st = json.loads(json.dumps(state or self.state))
+        for key in ("sinks", "sources", "apps", "recs"):
+            for row in st[key]:
+                row.pop("volume", None)
+                row.pop("muted", None)
+        return st
+
+    def test_struct_rebuild_keeps_volumes_and_mutes(self):
+        self.m.levels({"sink50": {"v": 41, "m": True}, "app120": {"v": 12, "m": False}})
+        st = self._struct()
+        st["sinks"].append(dict(st["sinks"][0], id=99, name="new-sink", default=False))
+        st["sources"].append(dict(self.state["sources"][0], id=98, name="new-src", default=False, volume=40))
+        m = self.m.rebuild(st)
+        sinks = {r["id"]: r for r in m.sections[0]["rows"]}
+        self.assertEqual((sinks[50]["value"], sinks[50]["muted"]), (0.41, True))
+        self.assertEqual(sinks[61]["value"], 0.55)
+        self.assertEqual(sinks[99]["value"], 0.0)                        # new, and the struct line had none
+        self.assertEqual(m.sections[1]["rows"][-1]["value"], 0.4)        # new, the line carried one
+        self.assertEqual(next(r for r in m.sections[2]["rows"] if r["id"] == 120)["value"], 0.12)
+        self.assertEqual(m.quick, self.m.quick)
+
+    def test_struct_rebuild_keeps_selection_and_picker_by_identity(self):
+        self.m.sel = (2, 1)                                              # Firefox
+        self.m.open_picker()
+        self.assertEqual(self.m.picker, 1)                               # on the Scarlett
+        st = self._struct()
+        st["apps"].insert(0, dict(st["apps"][0], index=101, app="Alpha"))
+        st["sinks"].insert(0, dict(st["sinks"][0], id=49, name="other-sink", default=False))
+        m = self.m.rebuild(st)
+        self.assertEqual(m.sel, (2, 2))
+        self.assertEqual(m.row()["id"], 120)
+        self.assertEqual(m.targets()[m.picker]["target"], self.state["sinks"][1]["name"])   # still the Scarlett
+        st = self._struct()
+        del st["apps"][1]                                                # Firefox leaves
+        m = self.m.rebuild(st)
+        self.assertEqual(m.sel, (2, 1))                                  # falls back to the clamped index
+        self.assertIsNone(m.picker)
+
     def test_sound_no_signal_render(self):
         import cairo
         m = self.sound.SoundModel(None, {"dnd": False, "night": False, "power": "unknown"})
@@ -256,7 +339,7 @@ class Sound(unittest.TestCase):
 
     # ---- beyond the brief: the model's edges and the panel's input routing
 
-    def test_volume_clamps_and_waits_for_levels(self):
+    def test_volume_clamps_at_both_ends(self):
         self.m.sel = (1, 1)                                              # the webcam mic, at 100
         self.assertEqual(self.m.action("right"), [("set_volume", "source", 68, 100)])
         self.assertEqual(self.m.action("left"), [("set_volume", "source", 68, 95)])
@@ -366,6 +449,15 @@ class SoundRouting(unittest.TestCase):
         self.assertEqual(self.calls["move"].call_args.args[2], self.p.model.sections[0]["rows"][1]["target"])
         self.calls["quick_toggle"].assert_not_called()
 
+    def test_struct_line_keeps_values(self):
+        st = json.loads((Path(__file__).parent / "fixtures" / "audiostate.json").read_text())
+        for row in st["sinks"]:
+            row.pop("volume"); row.pop("muted")
+        self.p._on_struct(st)
+        self.assertEqual(self.p.model.sections[0]["rows"][0]["value"], 0.68)
+        self.p.on_key("Right", 0)
+        self.calls["set_volume"].assert_called_once_with("sink", 50, 73)
+
     def test_clicks_and_scroll(self):
         import cairo
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
@@ -382,3 +474,7 @@ class SoundRouting(unittest.TestCase):
         dnd = next(h for h in self.p.hits if h[4] == "dnd")
         self.p.on_click(dnd[0] + 1, dnd[1] + 1, 1)
         self.calls["quick_toggle"].assert_called_once_with("dnd")
+
+
+if __name__ == "__main__":
+    unittest.main()

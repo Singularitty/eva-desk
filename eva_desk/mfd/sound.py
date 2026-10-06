@@ -46,29 +46,59 @@ class SoundModel:
     points at a real row (the quick section is never empty). `picker`, when not None, is the
     highlighted device in the move-to picker of the selected stream row.
 
-    Volumes, mutes, defaults and stream devices are never changed here on an action: the
-    listener's levels and struct lines report the result. Only the quick toggles, which no
-    listener reports, are flipped locally."""
+    Rows show what the listener last reported: an action never writes a row's volume, mute,
+    default or device. A volume step does remember its target in `pending` ((kind, id) -> 0..100)
+    so held keys and fast scrolls build on the last step sent, until `levels()` reports that row.
+    Only the quick toggles, which no listener reports, are flipped locally."""
 
     def __init__(self, state, quick):
         state = state or {}
         self.quick = {"dnd": False, "night": False, "power": "unknown", **(quick or {})}
         self.sections = []
+        self.reported = set()           # (kind, id) of rows whose volume the state carried
         for key, title, eng, _, _ in SECTIONS:
             if key == "quick":
                 rows = [self._quick_row(k, label) for k, label, _ in QUICK]
-            elif key in ("sinks", "sources"):
-                rows = [self._device_row(KIND[key], dev) for dev in state.get(key) or []]
             else:
-                rows = [self._stream_row(key, st) for st in state.get(key) or []]
+                src = state.get(key) or []
+                make = self._device_row if key in ("sinks", "sources") else self._stream_row
+                rows = [make(key, item) for item in src]
+                self.reported |= {(r["kind"], r["id"]) for r, item in zip(rows, src) if "volume" in item}
             self.sections.append({"key": key, "title": title, "eng": eng, "rows": rows})
+        self.pending = {}
         self.picker = None
         self.sel = self.clamp((0, 0))
 
+    def rebuild(self, state):
+        """A new model for a fresh layout (an `audiostate --struct` line, which carries no volume
+        or mute), keeping what the layout line can't know: each surviving row's value and mute
+        (unless the line did carry them), the pending steps, the quick state, and the selection and
+        open picker by row identity -- falling back to the clamped index when the row is gone."""
+        new = SoundModel(state, self.quick)
+        old_rows = {(r["kind"], r["id"]): r for sec in self.sections for r in sec["rows"]}
+        for sec in new.sections:
+            for r in sec["rows"]:
+                ident = (r["kind"], r["id"])
+                old = old_rows.get(ident)
+                if old is not None and ident not in new.reported:
+                    r["value"], r["muted"] = old["value"], old["muted"]
+        new.pending = {k: v for k, v in self.pending.items() if k in old_rows}
+        cur = self.row()
+        where = {(r["kind"], r["id"]): (s, i) for s, sec in enumerate(new.sections) for i, r in enumerate(sec["rows"])}
+        found = where.get((cur["kind"], cur["id"]))
+        new.sel = found if found is not None else new.clamp(self.sel)
+        if found is not None and self.picker is not None:
+            old_devs, devs = self.targets(), new.targets()
+            if devs:
+                was = old_devs[self.picker]["target"] if self.picker < len(old_devs) else None
+                new.picker = next((i for i, dev in enumerate(devs) if dev["target"] == was),
+                                  min(self.picker, len(devs) - 1))
+        return new
+
     # ---------------------------------------------------------------- rows
     @staticmethod
-    def _device_row(kind, dev):
-        return {"kind": kind, "id": dev.get("id"), "label": dev.get("friendly") or dev.get("short") or "",
+    def _device_row(key, dev):
+        return {"kind": KIND[key], "id": dev.get("id"), "label": dev.get("friendly") or dev.get("short") or "",
                 "sub": str(dev.get("sub", "")).upper(), "value": _frac(dev.get("volume")),
                 "muted": bool(dev.get("muted")), "default": bool(dev.get("default")), "target": dev.get("name", ""),
                 "short": dev.get("short") or dev.get("friendly") or ""}
@@ -117,6 +147,7 @@ class SoundModel:
             for row in sec["rows"]:
                 lv = levels_json.get(f"{prefix}{row['id']}")
                 if isinstance(lv, dict):
+                    self.pending.pop((row["kind"], row["id"]), None)
                     if "v" in lv:
                         row["value"] = _frac(lv["v"])
                     if "m" in lv:
@@ -142,9 +173,10 @@ class SoundModel:
         self.picker = None
 
     # ---------------------------------------------------------------- actions -> audio calls
-    @staticmethod
-    def _set(row, volume):
-        return [("set_volume", row["kind"], row["id"], max(0, min(100, int(volume))))]
+    def _set(self, row, volume):
+        volume = max(0, min(100, int(volume)))
+        self.pending[(row["kind"], row["id"])] = volume
+        return [("set_volume", row["kind"], row["id"], volume)]
 
     def action(self, name):
         """The audio calls for one named action on the selection (see the module docstring)."""
@@ -165,7 +197,8 @@ class SoundModel:
             return []
         if name in ("left", "right"):
             step = STEP if name == "right" else -STEP
-            return self._set(row, round(row["value"] * 100) + step)
+            base = self.pending.get((row["kind"], row["id"]), round(row["value"] * 100))
+            return self._set(row, base + step)
         if name == "mute":
             return [("toggle_mute", row["kind"], row["id"])]
         if name == "default":
@@ -218,8 +251,9 @@ QUICK_CONTENT = 34
 
 
 def _screen_extra(cr):
-    """What a `W.screen` takes around its content: bezel, padding and the tag line."""
-    tag_h = d.text_size(d.layout(cr, "TAG", d.F_META, 11, spacing=3))[1]
+    """What a `W.screen` takes around its content: bezel, padding and the tag line (measured with
+    a kanji in it, as every tag here has -- the fallback CJK font sets a taller line)."""
+    tag_h = d.text_size(d.layout(cr, f"{SECTIONS[0][1]} · {SECTIONS[0][2]}", d.F_META, 11, spacing=3))[1]
     return 2 * W.BEZEL_W + 2 * W.PAD + tag_h
 
 
@@ -251,7 +285,7 @@ def _list_screen(cr, x, y, w, h, s, model):
     colour = d.CLARET if colour_role == "claret" else d.col(colour_role)
     picking = active and model.picker is not None and model.targets()
     pick_h = PICK_H if picking else 0
-    visible = max(1, int((ch - pick_h) // ROW_H))
+    visible = max(1, int((ch - pick_h + 0.5) // ROW_H))      # +0.5: a content-sized screen fits exactly
     sel_r = model.sel[1] if active else -1
     start = max(0, sel_r - visible + 1) if active else 0
     shown = rows[start:start + visible]
@@ -339,11 +373,30 @@ def _no_signal(cr, x, y, w, h):
     d.draw_text(cr, note, cx + (cw - nw) / 2, by + bh + 10, d.col("dim"))
 
 
+def _fit(needs, room, floor):
+    """Heights for screens wanting `needs` in `room`: all of it when it fits, else water-filling --
+    every screen gets min(need, cap) for the one cap that fills `room` (never below `floor`)."""
+    if sum(needs) <= room:
+        return list(needs)
+    cap, left = room, room
+    order = sorted(needs)
+    for k, n in enumerate(order):
+        share = left / (len(order) - k)
+        if n > share:
+            cap = share
+            break
+        left -= n
+    return [max(floor, min(n, cap)) for n in needs]
+
+
 def draw_sound(cr, x, y, w, h, model, no_signal):
     """Paint the sound panel into (x, y, w, h). Returns (hits, sections): hits are
     (x0, y0, x1, y1, what) where `what` is (section, row) for a row, ("bar", section, row) for its
     level bar, an int for a key of the move-to picker, or "dnd" / "night" / "power" for the quick
-    toggles; sections are the (y, h) of each screen and the gap under it, top to bottom.
+    toggles; sections are the (y, h) of each screen and the gap under it, top to bottom, the
+    quick screen's running on to the bottom edge so the snap covers the bare ink there too.
+    The screens are sized to their content and stacked from the top; when they don't fit, the
+    short lists keep their height and the long ones share what's left (see `_fit`).
     The whole rectangle is backed in `ink`, so no window shows through between the screens."""
     d.block(cr, x, y, w, h, d.INK)
     if no_signal:
@@ -354,12 +407,7 @@ def draw_sound(cr, x, y, w, h, model, no_signal):
     needs = [extra + max(1, len(model.sections[s]["rows"])) * ROW_H + (PICK_H if picking and model.sel[0] == s else 0)
              for s in range(4)]
     quick_h = extra + QUICK_CONTENT
-    room = h - quick_h - 4 * GAP
-    total = sum(needs)
-    if room >= total:
-        heights = [n + (room - total) / 4 for n in needs]
-    else:
-        heights = [max(extra + ROW_H, n * room / total) for n in needs]
+    heights = _fit(needs, h - quick_h - 4 * GAP, extra + ROW_H)
     hits, sections = [], []
     sy = y
     for s, sh in enumerate(heights):
@@ -367,7 +415,7 @@ def draw_sound(cr, x, y, w, h, model, no_signal):
         sections.append((sy, sh + GAP))
         sy += sh + GAP
     hits += _quick_screen(cr, x, sy, w, quick_h, model)
-    sections.append((sy, quick_h))
+    sections.append((sy, max(quick_h, y + h - sy)))
     return hits, sections
 
 
@@ -414,9 +462,7 @@ class SoundControls:
         self.model.picker = None
 
     def _on_struct(self, state):
-        model = SoundModel(state, self.model.quick)
-        model.sel = model.clamp(self.model.sel)
-        self.model, self.no_signal = model, False
+        self.model, self.no_signal = self.model.rebuild(state), False
         self.invalidate()
 
     def _on_levels(self, levels):

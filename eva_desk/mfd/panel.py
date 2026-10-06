@@ -196,7 +196,7 @@ class Panel(O._Overlay):
             cr.paint()
             return
         for i, (y, h) in enumerate(self.sections):
-            s = W.snap_scale(W.stagger(i, p))
+            s = W.snap_scale(W.stagger(i, p, len(self.sections)))
             cr.save()
             cr.rectangle(0, y, self.pw, h)
             cr.clip()

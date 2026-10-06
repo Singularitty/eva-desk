@@ -149,6 +149,21 @@ def _value_readout(cr, right_edge, value):
     return text, right_edge - slot_w + (slot_w - vw)
 
 
+SUB_GAP = 2
+
+
+def sub_y(label_y, label_h):
+    """Where a row's sub line starts, under its label."""
+    return label_y + label_h + SUB_GAP
+
+
+def selected_block(label_x, label_y, label_w, label_h):
+    """The inverted `bone` block behind a selected row's label: it frames the label and stops a
+    pixel short of the sub line, so the two never overlap."""
+    top = label_y - 3
+    return label_x - 6, top, label_w + 12, sub_y(label_y, label_h) - 1 - top
+
+
 def rows(cr, x, y, w, items, selected, row_h=34):
     """A list of MFD rows: label + sub, a `segbar` from 38% of `w` to `w - 48`, the value as a
     0..100 readout (see `_value_readout`) in gold at the right. The selected row's label is
@@ -167,15 +182,13 @@ def rows(cr, x, y, w, items, selected, row_h=34):
         lw, lh = d.text_size(lay)
         label_y = ry + 5
         if i == selected:
-            bx, by = x + pad - 6, label_y - 4
-            bw, bh = lw + 12, lh + 8
-            d.block(cr, bx, by, bw, bh, d.BONE)
+            d.block(cr, *selected_block(x + pad, label_y, lw, lh), d.BONE)
             d.draw_text(cr, lay, x + pad, label_y, d.INK)
         else:
             d.draw_text(cr, lay, x + pad, label_y, d.col("dim") if it.get("muted") else d.BONE)
 
         sub = d.layout(cr, it.get("sub", ""), d.F_META, 10, spacing=2)
-        d.draw_text(cr, sub, x + pad, label_y + lh + 2, d.col("dim"))
+        d.draw_text(cr, sub, x + pad, sub_y(label_y, lh), d.col("dim"))
 
         value = it.get("value")
         if value is not None:
@@ -202,7 +215,9 @@ def snap_scale(t):
     return 0.02 + 0.98 * k / 4
 
 
-def stagger(i, t, total_ms=380, step_ms=120):
-    """The i-th section's own 0..1 progress given the panel's overall `t`, staggered by `step_ms`."""
-    v = (t * total_ms - i * step_ms) / total_ms
-    return max(0.0, min(1.0, v))
+def stagger(i, t, n):
+    """The i-th of `n` sections' own 0..1 progress given the panel's overall `t`: the sections'
+    starts spread evenly over the first 40 % of the snap and each takes the remaining 60 %, so the
+    last one opens fully exactly at t = 1 however many there are."""
+    start = 0.4 * i / max(1, n - 1)
+    return max(0.0, min(1.0, (t - start) / 0.6))
