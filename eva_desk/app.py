@@ -245,7 +245,9 @@ class App(Gtk.Application):
                 b.set_visible(True)
             if name not in self.frames and self.cfg["overlays"]["frame"]:
                 from .frame import Frame
-                self.frames[name] = Frame(self, self.cfg, gdk[name], name)
+                f = Frame(self, self.cfg, gdk[name], name)
+                self.frames[name] = f
+                f.update()                 # a freshly built frame has no geometry yet: compute it now
 
     def refresh(self):
         cfg = self.cfg

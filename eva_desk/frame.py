@@ -1,6 +1,8 @@
 """The window frame overlay: bone corner brackets, a class/workspace tag and a LOCK readout drawn
 around the focused window. Static — it never animates; the only thing that runs at idle is a 200 ms
 poll while the framed window is floating (so the brackets track it without a Hyprland event)."""
+import traceback
+
 from . import gtkutil  # noqa: F401  (pins GTK 4 before any gi.repository import)
 
 from gi.repository import GLib  # noqa: E402
@@ -85,7 +87,7 @@ class Frame(_Overlay):
         super().__init__(app, f"eva-frame-{name}", keyboard="none", passthrough=True)
         LS.set_layer(self.win, LS.Layer.TOP)       # the base class puts surfaces on `overlay`; this sits under them
         self.cfg, self.name = cfg, name
-        self.geo, self.poll_id, self.suspended = None, None, False
+        self.geo, self.poll_id = None, None
         self.place(gdk_monitor)
         self.show()                                 # left visible forever: an empty paint costs nothing
 
@@ -98,17 +100,23 @@ class Frame(_Overlay):
         return any(getattr(overlays.get(key), "visible", False) for key in ("power", "alttab"))
 
     def update(self):
-        if getattr(self, "suspended", False):
-            return
-        geo = geometry(self.app.hypr.j("activewindow") or {}, self.app.hypr.j("monitors") or [], self.cfg)
-        self.geo = geo[1] if geo and geo[0] == self.name and not self._busy() else None
-        floating = bool(self.geo and self.geo.get("floating"))
+        try:
+            active = self.app.hypr.j("activewindow") or {}
+            mons = self.app.hypr.j("monitors") or []
+        except Exception:                           # a socket hiccup is "nothing to draw", never a crash
+            traceback.print_exc()
+            active, mons = {}, []
+        geo = geometry(active, mons, self.cfg)
+        new_geo = geo[1] if geo and geo[0] == self.name and not self._busy() else None
+        floating = bool(new_geo and new_geo.get("floating"))
         if floating and self.poll_id is None:
             self.poll_id = GLib.timeout_add(200, self._poll)
         elif not floating and self.poll_id is not None:
             GLib.source_remove(self.poll_id)
             self.poll_id = None
-        self.queue()
+        if new_geo != self.geo:
+            self.geo = new_geo
+            self.queue()
 
     def _poll(self):
         self.update()
@@ -117,19 +125,13 @@ class Frame(_Overlay):
     def queue(self):
         self.view.queue_draw()
 
-    def set_suspended(self, on):
-        self.suspended = bool(on)
-        if self.suspended:
-            if self.poll_id is not None:
-                GLib.source_remove(self.poll_id)
-                self.poll_id = None
-            self.geo = None
-            self.queue()
-        else:
-            self.update()
+    def destroy(self):
+        if self.poll_id is not None:
+            GLib.source_remove(self.poll_id)
+            self.poll_id = None
+        super().destroy()
 
     def _paint(self, snap, w, h):
         if self.geo:
             cr = snap.append_cairo(rect(0, 0, w, h))
-            cr.scale(self.scale, self.scale)
             draw_frame(cr, self.geo, self.cfg["frame"])

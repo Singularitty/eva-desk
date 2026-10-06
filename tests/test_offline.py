@@ -156,16 +156,21 @@ class Logic(unittest.TestCase):
         f = frame.Frame.__new__(frame.Frame)
         f.app, f.cfg, f.poll_id, f.geo = self.app, self.cfg, None, None
         f.name = "DP-3"
-        f.queue = lambda: None
+        calls = []
+        f.queue = lambda: calls.append(1)
         self.app.hypr.state = {"monitors": MONS, "activewindow": {"at": [100, 900], "size": [400, 300], "monitor": 0, "floating": True, "fullscreen": 0, "class": "mpv", "workspace": {"id": 1}}}
         with mock.patch("eva_desk.frame.GLib.timeout_add", return_value=7) as ta:
             f.update()
         ta.assert_called_once()                      # floating: a 200 ms poll is armed
         self.assertEqual(ta.call_args[0][0], 200)
+        self.assertEqual(calls, [1])                  # fresh geometry: queued once
+        f.update()                                    # same geometry again: no redundant redraw
+        self.assertEqual(calls, [1])
         self.app.hypr.state["activewindow"]["floating"] = False
         with mock.patch("eva_desk.frame.GLib.source_remove") as sr:
             f.update()
         sr.assert_called_once_with(7)                # tiled again: the poll is dropped
+        self.assertEqual(calls, [1, 1])               # geometry changed: redrawn
 
 
 MONS = [{"id": 0, "name": "DP-3", "x": 0, "y": 746, "width": 3440, "height": 1440, "scale": 1},
@@ -199,6 +204,15 @@ class FrameGeometry(unittest.TestCase):
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 500)
         self.frame.draw_frame(cairo.Context(surf), {"x": 100, "y": 80, "w": 600, "h": 360, "cls": "kitty", "ws": 2, "floating": False}, self.cfg["frame"])
         self.assertGreater(sum(surf.get_data()), 0)       # something was painted
+
+    def test_frame_destroy_drops_poll(self):
+        f = self.frame.Frame.__new__(self.frame.Frame)
+        f.poll_id, f.tick_id, f.t = 7, None, 1.0
+        f.win = type("W", (), {"destroy": lambda self: None})()
+        f.view = type("V", (), {"remove_tick_callback": lambda self, tid: None})()
+        with mock.patch("eva_desk.frame.GLib.source_remove") as sr:
+            f.destroy()
+        sr.assert_called_once_with(7)                 # an armed poll never outlives a destroyed frame
 
 
 class Wallpapers(unittest.TestCase):
