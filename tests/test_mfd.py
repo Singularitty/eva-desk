@@ -84,15 +84,24 @@ class Widgets(unittest.TestCase):
         self.assertEqual(hits[0][0], 10)
         self.assertGreater(sum(surf.get_data()), 0)
 
-    def test_screen_tag_and_hot_have_a_gap(self):
+    def test_screen_tag_and_hot_share_one_line_with_a_gap(self):
         import cairo
         from eva_desk import draw as d
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 10, 10)
         cr = cairo.Context(surf)
-        tag_w, tag_h, hot_x = self.w._tag_positions(cr, "AUDIO OUTPUT", "HOT")
-        self.assertGreater(tag_h, 0)
-        space_w, _ = d.text_size(d.layout(cr, " ", d.F_META, 11, spacing=3))
-        self.assertGreaterEqual(hot_x - tag_w, space_w)   # "AUDIO OUTPUT" and "HOT" never run together
+        for tag in ("AUDIO OUTPUT", "出力 · OUTPUT · SINKS"):                # the kanji pull in a CJK fallback
+            lay, start = self.w.tag_layout(cr, tag, "· ACTIVE")
+            self.assertEqual(lay.get_line_count(), 1)                         # one line: one baseline, one height
+            self.assertEqual(lay.get_text()[len(tag)], " ")
+            tag_end = lay.index_to_pos(len(tag.encode())).x                   # where the tag's last glyph ends
+            hot_x = lay.index_to_pos(start).x
+            space_w = d.text_size(d.layout(cr, " ", d.F_META, 11, spacing=3))[0] * 1024
+            self.assertGreaterEqual(hot_x - tag_end, space_w * 0.9)           # "OUTPUT" and "ACTIVE" never run together
+            gold = [a for a in lay.get_attributes().get_attributes() if a.klass.type == d.Pango.AttrType.FOREGROUND]
+            self.assertEqual([(a.start_index, a.end_index) for a in gold], [(start, len(lay.get_text().encode()))])
+        lay, start = self.w.tag_layout(cr, "SOUND")
+        self.assertIsNone(start)
+        self.assertEqual(lay.get_text(), "SOUND")
 
     def test_value_readout_clamped_and_right_aligned(self):
         import cairo
@@ -177,6 +186,117 @@ def bare_panel(visible=True, closing=False, t=1.0):
     p.on_close = mock.Mock()
     p.hide = mock.Mock()
     return p
+
+
+class FakeWin:
+    def __init__(self, visible=False):
+        self.visible = visible
+
+    def get_visible(self):
+        return self.visible
+
+    def get_surface(self):
+        return None
+
+
+class FakeModal:
+    """A launcher / power / alt-tab stand-in: `visible` and a recording `hide()`."""
+
+    def __init__(self, visible):
+        self.visible, self.hidden = visible, 0
+
+    def hide(self):
+        self.visible = False
+        self.hidden += 1
+
+
+def live_panel(app=None, w=3440, h=1440, name="sound"):
+    """A real Panel (built with `__new__`, no GTK) wired to a fake app, so `open()`, `close()`
+    and `_click()` run their real code; `show`/`hide` flip the fake window, `animate` and the
+    subclass hooks are mocks."""
+    from eva_desk.mfd.panel import Panel
+    p = Panel.__new__(Panel)
+    p.app = app or FakeApp()
+    p.app.panels[name] = p
+    p.cfg = config.load("/nonexistent")
+    p.name, p.anchor, p.pwidth, p.pheight = name, "left", 1100, 1300
+    p.w, p.h, p.scale = w, h, 1
+    p.px = p.py = p.pw = p.ph = 0
+    p.win = FakeWin(False)
+    p._closing, p.t, p._close_from = False, 1.0, 1.0
+    p._base = p._base_tex = None
+    p.animate = mock.Mock()
+    p.on_open, p.on_close = mock.Mock(), mock.Mock()
+    p.on_click = mock.Mock()
+    p.show = mock.Mock(side_effect=lambda: setattr(p.win, "visible", True))
+    p.hide = mock.Mock(side_effect=lambda: setattr(p.win, "visible", False))
+    return p
+
+
+class PanelModal(unittest.TestCase):
+    def test_open_without_a_monitor_shows_nothing(self):
+        p = live_panel(w=0, h=0)
+        self.assertEqual(p.open(None), "no monitor")
+        p.show.assert_not_called()
+        p.animate.assert_not_called()
+        p.on_open.assert_not_called()
+
+    def test_open_twice_runs_on_open_once(self):
+        p = live_panel()
+        self.assertEqual(p.open(None), "ok")
+        self.assertEqual(p.open(None), "ok")                 # already open: no second listener
+        p.on_open.assert_called_once()
+        p.show.assert_called_once()
+
+    def test_reopen_while_closing_pairs_the_hooks(self):
+        p = live_panel()
+        p.open(None)
+        p.close()
+        self.assertTrue(p._closing)
+        p.open(None)                                         # cancels the close snap
+        self.assertEqual((p.on_open.call_count, p.on_close.call_count), (2, 1))
+        self.assertFalse(p._closing)
+
+    def test_open_steps_the_launcher_and_modal_overlays_aside(self):
+        app = FakeApp()
+        app.launcher = FakeModal(True)
+        app.overlays = {"power": FakeModal(True), "alttab": FakeModal(False), "alarm": FakeModal(True)}
+        p = live_panel(app)
+        p.open(None)
+        self.assertEqual(app.launcher.hidden, 1)
+        self.assertEqual(app.overlays["power"].hidden, 1)
+        self.assertEqual(app.overlays["alttab"].hidden, 0)   # was not up: left alone
+        self.assertEqual(app.overlays["alarm"].hidden, 0)    # not modal: the band stays
+
+    def test_open_closes_the_other_panels(self):
+        app = FakeApp()
+        a, b = live_panel(app, name="a"), live_panel(app, name="b")
+        a.open(None)
+        b.open(None)
+        self.assertTrue(a._closing)                          # a's close snap runs
+        a.animate.assert_called_with(190, on_done=a._finish_close)
+
+    def test_click_outside_the_rectangle_closes(self):
+        p = live_panel()
+        p.open(None)
+        gesture = mock.Mock()
+        gesture.get_current_button.return_value = 1
+        p._click(gesture, 1, p.px + 5, p.py + 5)             # inside: the panel handles it
+        p.on_click.assert_called_once_with(5, 5, 1)
+        self.assertFalse(p._closing)
+        p._click(gesture, 1, p.px + p.pw + 40, p.py + 5)     # outside (to its right): closes
+        self.assertTrue(p._closing)
+        self.assertEqual(p.on_click.call_count, 1)
+
+    def test_input_region_is_the_whole_monitor(self):
+        import cairo
+        p = live_panel(w=6880, h=2880)
+        p.scale = 2
+        surf = mock.Mock()
+        p.win.get_surface = lambda: surf
+        p.place(None)
+        region = surf.set_input_region.call_args.args[0]
+        self.assertEqual(region.get_extents(), cairo.RectangleInt(0, 0, 3440, 1440))   # logical px
 
 
 class PanelLifecycle(unittest.TestCase):
@@ -457,6 +577,21 @@ class SoundRouting(unittest.TestCase):
         self.assertEqual(self.p.model.sections[0]["rows"][0]["value"], 0.68)
         self.p.on_key("Right", 0)
         self.calls["set_volume"].assert_called_once_with("sink", 50, 73)
+
+    def test_scroll_onto_another_row_closes_the_picker(self):
+        import cairo
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
+        self.p.model.sel = (2, 1)
+        self.p.model.open_picker()
+        self.assertIsNotNone(self.p.model.picker)
+        self.p.hits, self.p.sections = self.sound.draw_sound(cairo.Context(surf), 0, 0, 1100, 1300, self.p.model, False)
+        own = next(h for h in self.p.hits if h[4] == (2, 1))
+        self.p.on_scroll(own[0] + 4, own[1] + 4, 0)                       # same row: the picker stays
+        self.assertIsNotNone(self.p.model.picker)
+        row = next(h for h in self.p.hits if h[4] == (2, 2))
+        self.p.on_scroll(row[0] + 4, row[1] + 4, 1)
+        self.assertEqual(self.p.model.sel, (2, 2))
+        self.assertIsNone(self.p.model.picker)                            # it belonged to the old row
 
     def test_clicks_and_scroll(self):
         import cairo

@@ -15,18 +15,23 @@ OUTLINE_W = 2
 PAD = 10
 
 
-def _tag_positions(cr, tag, hot):
-    """The tag label's width/height and, when there's a `hot` word, its x offset: a one-space gap
-    past the tag (measured in the tag font), so e.g. "AUDIO OUTPUT" and "HOT" never run together."""
-    tag_lay = d.layout(cr, tag, d.F_META, 11, spacing=3)
-    tag_w, tag_h = d.text_size(tag_lay)
-    space_w, _ = d.text_size(d.layout(cr, " ", d.F_META, 11, spacing=3))
-    return tag_w, tag_h, tag_w + space_w
+def tag_layout(cr, tag, hot=""):
+    """The tag line as ONE layout: `tag`, a space, then `hot` tinted gold. One layout keeps one
+    baseline and one line height even when the tag's kanji pull in a CJK fallback font, and the
+    space keeps e.g. "AUDIO OUTPUT" and "HOT" apart. Returns (layout, byte index where `hot`
+    starts, or None)."""
+    if not hot:
+        return d.layout(cr, tag, d.F_META, 11, spacing=3), None
+    text = f"{tag} {hot}"
+    start = len(tag.encode()) + 1
+    lay = d.layout(cr, text, d.F_META, 11, spacing=3)
+    d.tint(lay, start, len(text.encode()), d.GOLD)
+    return lay, start
 
 
 def screen(cr, x, y, w, h, tag, hot=""):
     """A bezelled MFD screen: `ink3` bezel with a 2 px `ink4` outline, `ink_deep` face, scanlines,
-    the `tag` readout (with `hot` appended in gold, a space past it). Returns the content rect
+    the `tag` readout (with `hot` appended in gold, a space past it, on the same layout). Returns the content rect
     inside the tag line."""
     d.block(cr, x, y, w, h, d.col("ink3"), border=d.col("ink4"), border_w=OUTLINE_W)
     fx, fy = x + BEZEL_W, y + BEZEL_W
@@ -36,11 +41,9 @@ def screen(cr, x, y, w, h, tag, hot=""):
     cr.fill()
     _scanlines(cr, fx, fy, fw, fh)
 
-    tag_w, tag_h, hot_x = _tag_positions(cr, tag, hot)
-    tx, ty = fx + PAD, fy + PAD
-    d.draw_text(cr, d.layout(cr, tag, d.F_META, 11, spacing=3), tx, ty, d.col("dim"))
-    if hot:
-        d.draw_text(cr, d.layout(cr, hot, d.F_META, 11, spacing=3), tx + hot_x, ty, d.GOLD)
+    lay, _ = tag_layout(cr, tag, hot)
+    tag_h = d.text_size(lay)[1]
+    d.draw_text(cr, lay, fx + PAD, fy + PAD, d.col("dim"))
 
     cx, cy = fx + PAD, fy + PAD + tag_h
     cw, ch = fw - 2 * PAD, fh - 2 * PAD - tag_h

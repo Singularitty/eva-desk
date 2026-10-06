@@ -199,6 +199,14 @@ def draw_power(cr, w, h, sel, armed, info):
 
 
 # ---------------------------------------------------------------- the surfaces
+def _close_panels(app):
+    """Close any open MFD panel before a modal overlay takes the keyboard (the fake apps of the
+    offline tests have no panels, hence the getattr)."""
+    close_panels = getattr(app, "close_panels", None)
+    if close_panels is not None:
+        close_panels()
+
+
 class _View(Gtk.Widget):
     def __init__(self, painter):
         super().__init__()
@@ -470,6 +478,7 @@ class AltTab(_Overlay):
                                "ep": ep, "urgent": wid in getattr(self.app, "urgent_ws", set())})
         if not self.items:
             return "no windows"
+        _close_panels(self.app)
         self.sel = 1 if len(self.items) > 1 else 0
         self.place(gdk_monitor)
         self._render()
@@ -556,6 +565,7 @@ class PowerMenu(_Overlay):
         self.view.add_controller(click)
 
     def open(self, gdk_monitor):
+        _close_panels(self.app)
         self.place(gdk_monitor)
         self.sel, self.armed, self.cross = 0, False, None
         self._render()

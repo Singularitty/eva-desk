@@ -1,6 +1,8 @@
 """The panel base class: an MFD screen docked to one edge (or the centre) of the monitor, on a
-full-monitor pass-through surface that only catches input inside its own rectangle. One panel is
-open at a time -- opening any panel closes the others (`app.open_panel` / `app.close_panels`).
+full-monitor surface. A panel is modal while open: it holds the keyboard and catches every click
+on its monitor, and a click outside its own rectangle closes it. One panel is open at a time --
+opening any panel closes the others (`app.open_panel` / `app.close_panels`) and steps the
+launcher, the power menu and Alt+Tab aside; those close the panels in turn when they open.
 
 The CRT snap plays on open (380 ms) and in reverse on close (190 ms): each section the subclass's
 `draw()` records in `self.sections` scales in about its own top edge (`widgets.snap_scale` of
@@ -91,10 +93,14 @@ class Panel(O._Overlay):
         self._set_region()
 
     def _set_region(self):
+        """The whole monitor catches input (in surface coordinates, i.e. logical pixels): the panel
+        is modal, and a click anywhere outside its rectangle closes it rather than reaching the
+        window underneath while the keyboard stays here."""
         surf = self.win.get_surface()
-        if surf is None:
+        if surf is None or not self.w:
             return
-        surf.set_input_region(cairo.Region(cairo.RectangleInt(int(self.px), int(self.py), int(self.pw), int(self.ph))))
+        surf.set_input_region(cairo.Region(cairo.RectangleInt(
+            0, 0, int(self.w // self.scale), int(self.h // self.scale))))
 
     def release(self):
         super().release()
@@ -103,17 +109,34 @@ class Panel(O._Overlay):
 
     # ------------------------------------------------------------ open / close / toggle
     def open(self, gdk_monitor):
+        self.place(gdk_monitor)
+        if not self.pw:
+            return "no monitor"                          # nowhere to paint: never hold the keyboard blind
+        if self.visible and not self._closing:
+            return "ok"                                  # already open: no second on_open() (or listener)
         if self._closing:
             # the close snap was still playing: it never got to call on_close(), so pair it
             # up now before the new on_open() -- the two must always alternate.
             self._closing = False
             self.on_close()
-        self.place(gdk_monitor)
         self.app.close_panels(except_name=self.name)
+        self._step_aside()
         self.on_open()
         self.show()
         self.animate(380)
         return "ok"
+
+    def _step_aside(self):
+        """Hide the launcher and the modal overlays (power menu, Alt+Tab): a panel and they never
+        share the screen, or two surfaces would fight over the exclusive keyboard."""
+        launcher = getattr(self.app, "launcher", None)
+        if launcher is not None and launcher.visible:
+            launcher.hide()
+        overlays = getattr(self.app, "overlays", None) or {}
+        for key in ("power", "alttab"):
+            o = overlays.get(key)
+            if o is not None and o.visible:
+                o.hide()
 
     def close(self):
         if not self.visible or self._closing:
@@ -221,11 +244,18 @@ class Panel(O._Overlay):
     def _to_panel(self, x, y):
         return x * self.scale - self.px, y * self.scale - self.py
 
+    def _inside(self, px, py):
+        return 0 <= px < self.pw and 0 <= py < self.ph
+
     def _click(self, gesture, n, x, y):
         px, py = self._to_panel(x, y)
+        if not self._inside(px, py):
+            self.app.close_panels()                      # a click outside: the panel steps away
+            return
         self.on_click(px, py, gesture.get_current_button())
 
     def _scroll(self, ctrl, dx, dy):
         px, py = self._to_panel(*self.pointer)
-        self.on_scroll(px, py, dy)
+        if self._inside(px, py):
+            self.on_scroll(px, py, dy)
         return True

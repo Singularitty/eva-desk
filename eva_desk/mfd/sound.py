@@ -544,9 +544,13 @@ class SoundControls:
         hit = self._hit(x, y)
         if hit is not None and isinstance(hit[2], tuple):
             what = hit[2]
-            self.model.sel = what[1:] if what[0] == "bar" else what
+            sel = what[1:] if what[0] == "bar" else what
+            if sel != self.model.sel:
+                self.model.sel, self.model.picker = sel, None    # the picker belonged to the old row
         if dy:
             self._run(self.model.action("left" if dy > 0 else "right"))
+        else:
+            self.invalidate()
 
 
 def __getattr__(name):

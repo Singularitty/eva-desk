@@ -79,6 +79,9 @@ class Launcher:
 
     def show(self, gdk_monitor=None):
         from gi.repository import Gtk4LayerShell as LS
+        close_panels = getattr(self.app, "close_panels", None)
+        if close_panels is not None:                   # a panel and the launcher never share the screen
+            close_panels()
         if gdk_monitor is not None:
             LS.set_monitor(self.win, gdk_monitor)
             geo = gdk_monitor.get_geometry()

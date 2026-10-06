@@ -263,6 +263,17 @@ def display(cr, text, size, italic=None, spacing=0):
                   spacing=spacing)
 
 
+def tint(lay, start, end, color):
+    """Colour the bytes `start`..`end` of `lay`'s text in `color` (a role tuple), on top of
+    whatever `draw_text` paints the rest in -- two colours on one line, one set of metrics."""
+    attr = Pango.attr_foreground_new(*(round(c * 65535) for c in color[:3]))
+    attr.start_index, attr.end_index = start, end
+    attrs = lay.get_attributes() or Pango.AttrList()
+    attrs.insert(attr)
+    lay.set_attributes(attrs)
+    return lay
+
+
 def text_size(lay):
     ink, logical = lay.get_pixel_extents()
     return logical.width, logical.height
