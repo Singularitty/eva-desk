@@ -50,6 +50,25 @@ class AudioSource(unittest.TestCase):
             with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
                 self.assertEqual(audio.quick(), {"dnd": True, "night": False, "power": "balanced"})
 
+    def test_snapshot_returns_none_on_nonzero_exit(self):
+        from eva_desk.sources import audio
+        fx = Path(__file__).parent / "fixtures" / "audiostate.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "audiostate"
+            fake.write_text(f"#!/bin/sh\ncat {fx}\nexit 1\n")
+            fake.chmod(0o755)
+            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
+                self.assertIsNone(audio.snapshot())
+
+    def test_quick_returns_default_on_nonzero_exit(self):
+        from eva_desk.sources import audio
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "audio-quick"
+            fake.write_text('#!/bin/sh\nprintf \'{"dnd":true,"night":false,"power":"balanced"}\\n\'\nexit 1\n')
+            fake.chmod(0o755)
+            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
+                self.assertEqual(audio.quick(), {"dnd": False, "night": False, "power": "unknown"})
+
     def test_write_commands_build_the_right_argv(self):
         from eva_desk.sources import audio
         with mock.patch("eva_desk.sources.audio.subprocess.Popen") as popen:
@@ -127,6 +146,50 @@ class AudioSource(unittest.TestCase):
             listener = audio.Listener(lambda d: None, lambda d: None)
             listener.start()               # does not raise
             listener.stop()                # does not raise
+
+    def test_start_twice_does_not_double_spawn(self):
+        from eva_desk.sources import audio
+        with mock.patch.object(audio, "scripts_dir", return_value=Path("/nonexistent")):
+            listener = audio.Listener(lambda d: None, lambda d: None)
+            with mock.patch.object(listener, "_spawn") as spawn:
+                listener.start()
+                listener.start()           # already running: a no-op
+            self.assertEqual(spawn.call_count, 2)       # one for --struct, one for --levels, not four
+            listener.stop()
+
+    def test_stop_cancels_the_pending_read(self):
+        from eva_desk.sources import audio
+        with mock.patch.object(audio, "scripts_dir", return_value=Path("/nonexistent")):
+            listener = audio.Listener(lambda d: None, lambda d: None)
+            listener.start()
+            cancellable = listener._cancellable
+            self.assertFalse(cancellable.is_cancelled())
+            listener.stop()
+            self.assertTrue(cancellable.is_cancelled())
+            self.assertFalse(listener.running)
+
+    def test_stop_prevents_late_callbacks(self):
+        from gi.repository import GLib
+        from eva_desk.sources import audio
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "audiostate"
+            fake.write_text("#!/bin/sh\necho '{\"a\":1}'\n")
+            fake.chmod(0o755)
+            calls = []
+            loop = GLib.MainLoop()
+            t = threading.Thread(target=loop.run, daemon=True)
+            t.start()
+            try:
+                with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
+                    listener = audio.Listener(calls.append, calls.append)
+                    listener.start()
+                    listener.stop()                     # stop right away: a buffered line may still land,
+                    frozen = len(calls)                  # but nothing more should arrive after this point
+                    time.sleep(0.3)
+            finally:
+                loop.quit()
+                t.join(timeout=1)
+        self.assertEqual(len(calls), frozen)             # the counter is frozen at stop() time
 
 
 if __name__ == "__main__":
