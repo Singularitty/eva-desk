@@ -15,9 +15,19 @@ OUTLINE_W = 2
 PAD = 10
 
 
+def _tag_positions(cr, tag, hot):
+    """The tag label's width/height and, when there's a `hot` word, its x offset: a one-space gap
+    past the tag (measured in the tag font), so e.g. "AUDIO OUTPUT" and "HOT" never run together."""
+    tag_lay = d.layout(cr, tag, d.F_META, 11, spacing=3)
+    tag_w, tag_h = d.text_size(tag_lay)
+    space_w, _ = d.text_size(d.layout(cr, " ", d.F_META, 11, spacing=3))
+    return tag_w, tag_h, tag_w + space_w
+
+
 def screen(cr, x, y, w, h, tag, hot=""):
     """A bezelled MFD screen: `ink3` bezel with a 2 px `ink4` outline, `ink_deep` face, scanlines,
-    the `tag` readout (with `hot` appended in gold). Returns the content rect inside the tag line."""
+    the `tag` readout (with `hot` appended in gold, a space past it). Returns the content rect
+    inside the tag line."""
     d.block(cr, x, y, w, h, d.col("ink3"), border=d.col("ink4"), border_w=OUTLINE_W)
     fx, fy = x + BEZEL_W, y + BEZEL_W
     fw, fh = w - 2 * BEZEL_W, h - 2 * BEZEL_W
@@ -26,13 +36,11 @@ def screen(cr, x, y, w, h, tag, hot=""):
     cr.fill()
     _scanlines(cr, fx, fy, fw, fh)
 
-    tag_lay = d.layout(cr, tag, d.F_META, 11, spacing=3)
-    tag_w, tag_h = d.text_size(tag_lay)
+    tag_w, tag_h, hot_x = _tag_positions(cr, tag, hot)
     tx, ty = fx + PAD, fy + PAD
-    d.draw_text(cr, tag_lay, tx, ty, d.col("dim"))
+    d.draw_text(cr, d.layout(cr, tag, d.F_META, 11, spacing=3), tx, ty, d.col("dim"))
     if hot:
-        hot_lay = d.layout(cr, hot, d.F_META, 11, spacing=3)
-        d.draw_text(cr, hot_lay, tx + tag_w, ty, d.GOLD)
+        d.draw_text(cr, d.layout(cr, hot, d.F_META, 11, spacing=3), tx + hot_x, ty, d.GOLD)
 
     cx, cy = fx + PAD, fy + PAD + tag_h
     cw, ch = fw - 2 * PAD, fh - 2 * PAD - tag_h
@@ -130,9 +138,21 @@ def keyrow(cr, x, y, keys, active=-1, key_w=36, key_h=26, gap=6):
     return hits
 
 
+def _value_readout(cr, right_edge, value):
+    """The row's `value` (any real number) as a 0..100 percentage, clamped, and the x to draw it at
+    so it's right-aligned to `right_edge` in a slot as wide as "100" -- the text's right edge (and
+    the bar's clearance) never move as the digit count changes between e.g. "68" and "100"."""
+    pct = max(0, min(100, round(value * 100)))
+    text = str(pct)
+    slot_w, _ = d.text_size(d.layout(cr, "100", d.F_META, 13))
+    vw, _ = d.text_size(d.layout(cr, text, d.F_META, 13))
+    return text, right_edge - slot_w + (slot_w - vw)
+
+
 def rows(cr, x, y, w, items, selected, row_h=34):
-    """A list of MFD rows: label + sub, a `segbar` from 38% of `w` to `w - 48`, the value as `NN`
-    in gold at the right. The selected row's label is inverted (`bone` block, `ink` text).
+    """A list of MFD rows: label + sub, a `segbar` from 38% of `w` to `w - 48`, the value as a
+    0..100 readout (see `_value_readout`) in gold at the right. The selected row's label is
+    inverted (`bone` block, `ink` text).
     Returns hit rectangles (x0, y0, x1, y1, index) and (x0, y0, x1, y1, ("bar", index)) for the bars."""
     hits = []
     pad = 12
@@ -165,9 +185,10 @@ def rows(cr, x, y, w, items, selected, row_h=34):
             segbar(cr, bar_x0, bar_y, bar_w, bar_h, value, colour, peak=it.get("peak"))
             hits.append((bar_x0, bar_y, bar_x0 + bar_w, bar_y + bar_h, ("bar", i)))
 
-            vlay = d.layout(cr, f"{round(value * 100):02d}", d.F_META, 13)
-            vw, vh = d.text_size(vlay)
-            d.draw_text(cr, vlay, x + w - 8 - vw, ry + (row_h - vh) / 2, d.GOLD)
+            text, vx = _value_readout(cr, x + w - 8, value)
+            vlay = d.layout(cr, text, d.F_META, 13)
+            vh = d.text_size(vlay)[1]
+            d.draw_text(cr, vlay, vx, ry + (row_h - vh) / 2, d.GOLD)
     return hits
 
 
