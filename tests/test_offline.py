@@ -1,11 +1,15 @@
 """Offline tests: no compositor, no windows. Run: python3 -m unittest discover -s tests"""
+import contextlib
 import copy
+import io
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.pop("WAYLAND_DISPLAY", None)
@@ -103,7 +107,7 @@ class Logic(unittest.TestCase):
         self.step(3, [])
         self.assertEqual(self.step(3, [win(3)]), ("figure", True, False))               # any workspace
         self.assertEqual(self.step(7, [win(7)]), ("figure", False, False))              # switching: no impact
-        self.app.figure_on = False                                                     # Super+Shift+B off
+        self.app.figure_on = False                                                     # eva-ctl figure off
         self.assertEqual(self.step(7, [win(7)]), (None, False, False))
         self.app.figure_on, self.app.pending_impact = True, True                       # ... and back on
         self.assertEqual(self.step(7, [win(7)]), ("figure", True, False))               # comes back swinging
@@ -377,3 +381,24 @@ class Themes(unittest.TestCase):
         finally:
             os.unlink(f.name)
             config.load("/nonexistent")
+
+
+class ToggleRemoved(unittest.TestCase):
+    def test_default_has_no_toggle_bind(self):
+        cfg = config.load("/nonexistent")
+        self.assertNotIn("figure_toggle_bind", cfg["hyprland"])
+
+    def test_settings_lua_has_no_toggle_line(self):
+        cfg = config.load("/nonexistent")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(config, "CONFIG_DIR", Path(tmp)):
+            out = config.write_lua_settings(cfg)
+            self.assertNotIn("figure_toggle_bind", out.read_text())
+
+    def test_old_toml_key_is_ignored_with_a_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "eva.toml"
+            p.write_text('[hyprland]\nfigure_toggle_bind = "SUPER + SHIFT + B"\n')
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                cfg = config.load(str(p))
+            self.assertNotIn("figure_toggle_bind", cfg["hyprland"])
+            self.assertIn("figure_toggle_bind", out.getvalue())

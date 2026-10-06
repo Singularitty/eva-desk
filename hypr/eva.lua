@@ -121,7 +121,7 @@ local function build_stages()
 end
 local stages_built = build_stages()
 
--- the figure on/off switch (Super+Shift+B through the daemon); the daemon keeps it in this file
+-- the figure on/off switch (eva-ctl figure on|off|toggle); the daemon keeps it in this file
 local function figure_saved()
     local f = io.open(HOME .. "/.local/state/eva-desk/figure")
     if not f then return true end
@@ -239,10 +239,6 @@ local launcher_key = opt("launcher_bind", nil)
 if launcher_key then
     pcall(hl.unbind, launcher_key)            -- same key, now opens the vibe launcher
     hl.bind(launcher_key, hl.dsp.exec_cmd(BIN .. "eva-ctl launcher"))
-end
-local figure_key = opt("figure_toggle_bind", nil)
-if figure_key then
-    hl.bind(figure_key, hl.dsp.exec_cmd(BIN .. "eva-ctl figure toggle"))
 end
 local shot_key = opt("screenshot_bind", nil)
 if shot_key then

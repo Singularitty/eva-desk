@@ -102,7 +102,6 @@ DEFAULTS = {
     "hyprland": {
         "maximize_bind": ["SUPER + RETURN"],   # one key or a list; fills the screen under the bar
         "launcher_bind": "SUPER + Space",
-        "figure_toggle_bind": "SUPER + SHIFT + B",   # turn the figure (and his reserved space) on / off
         "side_bind": "SUPER + D",                    # dock the focused window into the figure's space
         "screenshot_bind": "Print",                  # re-pointed at the themed screenshot tool
         "alttab_bind": "ALT + Tab",                  # re-pointed at the cast strip when overlays.alttab is on
@@ -124,6 +123,8 @@ def _merge(base, over):
             base[k] = v
     return base
 
+
+REMOVED_KEYS = {("hyprland", "figure_toggle_bind")}   # old eva.toml keys: popped on load(), noted once each
 
 _theme = {"name": themes.DEFAULT, "data": themes.get(themes.DEFAULT), "listeners": []}
 
@@ -154,6 +155,11 @@ def load(path=None):
     if p.exists():
         with open(p, "rb") as f:
             _merge(cfg, tomllib.load(f))
+    for section, key in REMOVED_KEYS:
+        if key in cfg.get(section, {}):
+            cfg[section].pop(key, None)
+            print(f"eva-desk: [{section}] {key} is gone (the figure has no toggle key any more; "
+                  f"use `eva-ctl figure`)", flush=True)
     name = str(cfg["theme"].get("name") or themes.DEFAULT)
     over = cfg.get("themes", {}).get(name)
     if isinstance(over, dict):                 # [themes.<name>.<section>] wins while that theme is active
@@ -208,7 +214,7 @@ def figure_workspaces(cfg):
 
 
 def figure_enabled():
-    """The Super+Shift+B toggle, shared with hypr/eva.lua through a state file."""
+    """The eva-ctl figure on/off state, shared with hypr/eva.lua through a state file."""
     try:
         return (STATE_DIR / "figure").read_text().strip() != "off"
     except OSError:
@@ -263,7 +269,6 @@ def write_lua_settings(cfg, monitor_width=None, monitor_height=None):
         f"    border_speed = {max(0, min(100, int(h['border_speed'])))},",   # Hyprland caps animation speed at 100
         "    maximize_binds = {" + ", ".join(lua_str(k) for k in _keys(h["maximize_bind"])) + "},",
         f"    launcher_bind = {lua_str(h['launcher_bind']) if cfg['launcher']['enabled'] and h['launcher_bind'] else 'nil'},",
-        f"    figure_toggle_bind = {lua_str(h['figure_toggle_bind']) if h.get('figure_toggle_bind') else 'nil'},",
         f"    side_bind = {lua_str(h['side_bind']) if h.get('side_bind') else 'nil'},",
         f"    screenshot_bind = {lua_str(h['screenshot_bind']) if cfg['shot']['enabled'] and h.get('screenshot_bind') else 'nil'},",
         f"    alttab_bind = {lua_str(h['alttab_bind']) if cfg['overlays'].get('alttab') and h.get('alttab_bind') else 'nil'},",

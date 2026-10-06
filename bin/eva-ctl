@@ -3,7 +3,7 @@
 
   eva-ctl launcher              toggle the launcher (bound to the launcher key)
   eva-ctl shot                  the themed screenshot tool (bound to Print)
-  eva-ctl figure [on|off|toggle] the figure and his reserved space (Super+Shift+B toggles)
+  eva-ctl figure [on|off|toggle] the figure and his reserved space
   eva-ctl impact figure          play the figure's entrance on the main monitor (to try it)
   eva-ctl herald                play the herald sweep (to try it)
   eva-ctl alttab                the cast strip (bound to Alt+Tab)

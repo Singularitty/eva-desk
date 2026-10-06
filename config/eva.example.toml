@@ -110,7 +110,6 @@ search_url = "https://duckduckgo.com/?q={}"
 [hyprland]
 maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)
 launcher_bind = "SUPER + Space"   # this key opens the eva-desk launcher ("" = leave it alone)
-figure_toggle_bind = "SUPER + SHIFT + B"   # figure on / off (his reserved space goes with him)
 side_bind = "SUPER + D"           # dock the focused window into the figure's space (again: back to the tiles)
 screenshot_bind = "Print"   # re-pointed at the themed screenshot tool
 alttab_bind = "ALT + Tab"   # re-pointed at the cast strip (overlays.alttab)

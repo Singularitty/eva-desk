@@ -51,7 +51,6 @@ Hyprland reloads and the daemon starts. Then:
 | `Super+M` | power menu |
 | `Print` | screenshot |
 | `Super+D` | dock a window into the figure's space |
-| `Super+Shift+B` | hide / show the figure |
 
 Everything is in `~/.config/eva-desk/eva.toml`; `eva-ctl apply` after editing. `./uninstall.sh` puts things back.
 
@@ -60,7 +59,7 @@ Everything is in `~/.config/eva-desk/eva.toml`; `eva-ctl apply` after editing. `
 <p align="center"><img src="docs/eva-stage.png" alt="Unit-01 on the stage" width="100%"></p>
 
 **The figure.** Unit-01 stands to the right of your windows, on a hexagon field. It appears when the first
-window on a workspace opens, then stays still. `Super+D` docks a window into its space, `Super+Shift+B` hides it.
+window on a workspace opens, then stays still. `Super+D` docks a window into its space; `eva-ctl figure off` hides it.
 
 <p align="center"><img src="docs/eva-herald.png" alt="maximised window backdrop" width="100%"></p>
 
@@ -110,7 +109,7 @@ And the rest, in short:
   The clock digits slide at the minute. After thirty seconds of a maxed-out CPU the stage turns orange until
   it cools down.
 
-Your own keybinds are left alone. eva-desk adds `Super+Return`, `Super+Shift+B` and `Super+D`, and takes
+Your own keybinds are left alone. eva-desk adds `Super+Return` and `Super+D`, and takes
 over your launcher key, `Print`, `Alt+Tab` and `Super+M`. All of them can be changed or turned off.
 
 ## Install
@@ -192,7 +191,7 @@ Everything lives in `~/.config/eva-desk/eva.toml`. [`config/eva.example.toml`](c
 every option with its default. After editing, run `eva-ctl apply`.
 
 ```sh
-eva-ctl figure toggle          # the figure and its space (same as Super+Shift+B)
+eva-ctl figure toggle          # the figure and its space
 eva-ctl impact figure          # replay the entrance
 eva-ctl herald                 # replay the maximise backdrop
 eva-ctl eyecatch 3 PROJECTS    # try the workspace card
@@ -271,7 +270,7 @@ Hyprland's Lua config.
 draws. If those look right, the problem is in Hyprland; if not, open an issue with the PNG. The log is at
 `~/.local/state/eva-desk/eva-desk.log`.
 
-**The figure takes too much room.** `Super+Shift+B` hides it. `figure = 0` under `[figures]` removes it, and
+**The figure takes too much room.** `eva-ctl figure off` hides it. `figure = 0` under `[figures]` removes it, and
 `stage = 0.2` makes it narrower.
 
 **Too much movement.** `[overlays]` has a switch for each motion. `eyecatch_style = "cut"` is a louder
