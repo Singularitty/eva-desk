@@ -97,6 +97,7 @@ class App(Gtk.Application):
                 self.overlays["pulse"] = O.SpawnPulse(self, cfg)
         except Exception:
             traceback.print_exc()
+        self.panels = {}
         self.frames = {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)
@@ -416,6 +417,17 @@ class App(Gtk.Application):
                 return monitors().get(m["name"])
         return None
 
+    def open_panel(self, name, gdk):
+        p = self.panels.get(name)
+        if not p:
+            return f"{name} disabled"
+        return p.open(gdk)
+
+    def close_panels(self, except_name=None):
+        for name, p in list(self.panels.items()):
+            if name != except_name:
+                p.close()
+
     def command(self, line):
         parts = line.split()
         cmd, args = (parts[0], parts[1:]) if parts else ("", [])
@@ -444,6 +456,19 @@ class App(Gtk.Application):
             except Exception:
                 traceback.print_exc()
                 return f"{cmd} failed (see the log)"
+        if cmd == "panel":
+            if args and args[0] == "close":
+                self.close_panels()
+                return "ok"
+            name = args[0] if args else ""
+            p = self.panels.get(name)
+            if not p:
+                return f"{name} disabled"
+            try:
+                return p.toggle(self.focused_gdk())
+            except Exception:
+                traceback.print_exc()
+                return "panel failed (see the log)"
         if cmd == "eyecatch":
             o = self.overlays.get("eyecatch")
             if not o:

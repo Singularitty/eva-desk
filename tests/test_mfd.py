@@ -96,5 +96,49 @@ class Widgets(unittest.TestCase):
         self.assertAlmostEqual(x100 + w100, x170 + w170)
 
 
+class FakePanel:
+    """Records opens/closes; `open` plays the real exclusivity move a Panel.open() would."""
+
+    def __init__(self, app, name):
+        self.app, self.name = app, name
+        self.opened, self.closed = 0, 0
+
+    def open(self, gdk):
+        self.app.close_panels(except_name=self.name)
+        self.opened += 1
+        return "ok"
+
+    def close(self):
+        self.closed += 1
+
+
+def FakeApp():
+    from eva_desk.app import App
+    app = App.__new__(App)
+    app.panels = {}
+    return app
+
+
+class PanelBase(unittest.TestCase):
+    def test_panel_rect_anchors(self):
+        from eva_desk.mfd import panel
+        cfg = config.load("/nonexistent")
+        r = panel.panel_rect("left", 3440, 1440, 1100, 1300, cfg["bar"]["height"], margin=12)
+        self.assertEqual(r, (12, 56 + 12, 1100, 1300))
+        r = panel.panel_rect("bottom", 3440, 1440, 3416, 320, 56, 12)
+        self.assertEqual(r, (12, 1440 - 12 - 320, 3416, 320))
+        r = panel.panel_rect("center", 3440, 1440, 1000, 600, 56, 12)
+        self.assertEqual(r, (1220, 56 + (1440 - 56 - 600) // 2, 1000, 600))
+
+    def test_panel_exclusive(self):
+        app = FakeApp()
+        a, b = FakePanel(app, "a"), FakePanel(app, "b")
+        app.panels = {"a": a, "b": b}
+        self.assertEqual(app.open_panel("a", None), "ok")
+        self.assertEqual(app.open_panel("b", None), "ok")
+        self.assertEqual((a.opened, a.closed, b.opened), (1, 1, 1))
+        self.assertEqual(app.open_panel("zzz", None), "zzz disabled")
+
+
 if __name__ == "__main__":
     unittest.main()
