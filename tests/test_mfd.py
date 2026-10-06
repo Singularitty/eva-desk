@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.pop("WAYLAND_DISPLAY", None)
@@ -127,6 +128,8 @@ class PanelBase(unittest.TestCase):
         self.assertEqual(r, (12, 56 + 12, 1100, 1300))
         r = panel.panel_rect("bottom", 3440, 1440, 3416, 320, 56, 12)
         self.assertEqual(r, (12, 1440 - 12 - 320, 3416, 320))
+        r = panel.panel_rect("bottom", 3440, 1440, 1000, 300, 56, 12)
+        self.assertEqual(r, (12, 1440 - 12 - 300, 1000, 300))   # flush left, not centred
         r = panel.panel_rect("center", 3440, 1440, 1000, 600, 56, 12)
         self.assertEqual(r, (1220, 56 + (1440 - 56 - 600) // 2, 1000, 600))
 
@@ -138,6 +141,62 @@ class PanelBase(unittest.TestCase):
         self.assertEqual(app.open_panel("b", None), "ok")
         self.assertEqual((a.opened, a.closed, b.opened), (1, 1, 1))
         self.assertEqual(app.open_panel("zzz", None), "zzz disabled")
+
+
+class FakeSurface:
+    def __init__(self, visible):
+        self._visible = visible
+
+    def get_visible(self):
+        return self._visible
+
+
+def bare_panel(visible=True, closing=False, t=1.0):
+    """A Panel built with `__new__` (no GTK objects touched) with just enough state for the
+    close()/_finish_close() lifecycle guards; `animate`/`on_close`/`hide` are mocks."""
+    from eva_desk.mfd.panel import Panel
+    p = Panel.__new__(Panel)
+    p.win = FakeSurface(visible)
+    p._closing, p.t, p._close_from = closing, t, 1.0
+    p.animate = mock.Mock()
+    p.on_close = mock.Mock()
+    p.hide = mock.Mock()
+    return p
+
+
+class PanelLifecycle(unittest.TestCase):
+    def test_close_on_hidden_panel_is_a_noop(self):
+        p = bare_panel(visible=False, closing=False)
+        p.close()
+        p.animate.assert_not_called()
+        self.assertFalse(p._closing)
+
+    def test_second_close_while_closing_does_not_restart(self):
+        p = bare_panel(visible=True, closing=False, t=1.0)
+        p.close()                                        # starts the close snap
+        p.close()                                        # already closing: must be a no-op
+        p.animate.assert_called_once()
+
+    def test_finish_close_is_a_noop_when_not_closing(self):
+        p = bare_panel(visible=True, closing=False)
+        p._finish_close()
+        p.on_close.assert_not_called()
+        p.hide.assert_not_called()
+
+    def test_finish_close_runs_when_closing(self):
+        p = bare_panel(visible=True, closing=True)
+        p._finish_close()
+        p.on_close.assert_called_once()
+        p.hide.assert_called_once()
+        self.assertFalse(p._closing)
+
+
+class Progress(unittest.TestCase):
+    def test_progress_rule(self):
+        from eva_desk.mfd.panel import _progress
+        self.assertEqual(_progress(1.0, True), 0.0)
+        self.assertAlmostEqual(_progress(0.3, True), 0.7)
+        self.assertEqual(_progress(0.3, False), 0.3)
 
 
 if __name__ == "__main__":

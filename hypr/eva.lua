@@ -223,7 +223,7 @@ function EVA_SET_FIGURE(on)
 end
 
 ---------------------------------------------------------------- layer surfaces of the daemon
-hl.layer_rule({ name = "vibe-instant", match = { namespace = "^eva-(stage|flash|launcher|shot|eyecatch|alarm|alttab|power|pulse)$" }, no_anim = true })
+hl.layer_rule({ name = "vibe-instant", match = { namespace = "^eva-(stage|flash|launcher|shot|eyecatch|alarm|alttab|power|pulse|panel-.*)$" }, no_anim = true })
 
 -- a maximised window that closes or leaves maximise any other way puts its stage back
 hl.on("window.fullscreen", function() sync_stages(); restyle() end)

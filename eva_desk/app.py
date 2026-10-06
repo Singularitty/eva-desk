@@ -460,7 +460,9 @@ class App(Gtk.Application):
             if args and args[0] == "close":
                 self.close_panels()
                 return "ok"
-            name = args[0] if args else ""
+            if not args:
+                return "panel: name missing"
+            name = args[0]
             p = self.panels.get(name)
             if not p:
                 return f"{name} disabled"

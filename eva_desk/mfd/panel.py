@@ -19,8 +19,8 @@ from . import widgets as W  # noqa: E402
 
 def panel_rect(anchor, mw, mh, pw, ph, bar_h, margin=12):
     """The panel's (x, y, w, h) in surface pixels for `anchor` within a `mw`x`mh` monitor, with
-    `bar_h` kept free at the top. `left`/`right`/`top` sit flush under the bar; `bottom` and
-    `center` centre themselves in the axis their name doesn't pin down."""
+    `bar_h` kept free at the top. `left`/`right`/`bottom` sit flush at `margin` from their edge;
+    `top` centres horizontally (flush under the bar); `center` centres in both axes below the bar."""
     top_y = bar_h + margin
     if anchor == "left":
         return margin, top_y, pw, ph
@@ -29,10 +29,16 @@ def panel_rect(anchor, mw, mh, pw, ph, bar_h, margin=12):
     if anchor == "top":
         return (mw - pw) // 2, top_y, pw, ph
     if anchor == "bottom":
-        return (mw - pw) // 2, mh - margin - ph, pw, ph
+        return margin, mh - margin - ph, pw, ph
     if anchor == "center":
         return (mw - pw) // 2, bar_h + (mh - bar_h - ph) // 2, pw, ph
     raise ValueError(f"panel: unknown anchor {anchor!r}")
+
+
+def _progress(t, closing):
+    """The snap's effective 0..1 progress from the overlay's own clock `t` (always 0..1 forward):
+    forward while opening, in reverse while closing -- 1.0 at t=0, 0.0 at t=1 when closing."""
+    return (1.0 - t) if closing else t
 
 
 class Panel(O._Overlay):
@@ -42,15 +48,16 @@ class Panel(O._Overlay):
 
     MARGIN = 12
 
-    def __init__(self, app, cfg, namespace, width, height, anchor):
-        super().__init__(app, namespace, keyboard="exclusive", passthrough=False)
-        self.cfg, self.anchor, self.name = cfg, anchor, namespace
+    def __init__(self, app, cfg, name, width, height, anchor):
+        super().__init__(app, f"eva-panel-{name}", keyboard="exclusive", passthrough=False)
+        self.cfg, self.anchor, self.name = cfg, anchor, name
         self.pwidth, self.pheight = width, height
         self.px = self.py = self.pw = self.ph = 0
         self.sections, self.hits = [], []
         self._base = None
         self._base_tex = None
         self._closing = False
+        self._close_from = 1.0
         self.pointer = (0, 0)
 
         keys = Gtk.EventControllerKey()
@@ -96,19 +103,30 @@ class Panel(O._Overlay):
 
     # ------------------------------------------------------------ open / close / toggle
     def open(self, gdk_monitor):
+        if self._closing:
+            # the close snap was still playing: it never got to call on_close(), so pair it
+            # up now before the new on_open() -- the two must always alternate.
+            self._closing = False
+            self.on_close()
         self.place(gdk_monitor)
         self.app.close_panels(except_name=self.name)
-        self._closing = False
         self.on_open()
         self.show()
         self.animate(380)
         return "ok"
 
     def close(self):
+        if not self.visible or self._closing:
+            return                                       # already closed, or already closing
+        # if the open snap was still playing, reverse from wherever it had got to, not from
+        # a fully-open frame it never actually reached
+        self._close_from = self.t if self.t < 1.0 else 1.0
         self._closing = True
         self.animate(190, on_done=self._finish_close)
 
     def _finish_close(self):
+        if not self._closing:
+            return                                       # a reopen already cancelled this close
         self._closing = False
         self.on_close()
         self.hide()
@@ -159,22 +177,26 @@ class Panel(O._Overlay):
         self._ensure_base()
         if self._base is None:
             return
-        if self.t >= 1.0:
+        p = _progress(self.t, self._closing)
+        if self._closing:
+            p *= self._close_from                        # continuity: reverse from where open had got to
+        if p <= 0.0:
+            return                                        # fully closed: the final close tick draws nothing
+        if p >= 1.0:
             if self._base_tex is None:
                 self._base_tex = texture(self._base)
             tex = self._base_tex
         else:
-            t = (1 - self.t) if self._closing else self.t
-            tex = render_texture(self.pw, self.ph, lambda cr: self._snap_frame(cr, t))
+            tex = render_texture(self.pw, self.ph, lambda cr: self._snap_frame(cr, p))
         snap.append_texture(tex, rect(self.px, self.py, self.pw, self.ph))
 
-    def _snap_frame(self, cr, t):
+    def _snap_frame(self, cr, p):
         if not self.sections:
             cr.set_source_surface(self._base, 0, 0)
             cr.paint()
             return
         for i, (y, h) in enumerate(self.sections):
-            s = W.snap_scale(W.stagger(i, t))
+            s = W.snap_scale(W.stagger(i, p))
             cr.save()
             cr.rectangle(0, y, self.pw, h)
             cr.clip()
