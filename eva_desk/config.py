@@ -63,7 +63,7 @@ DEFAULTS = {
         # extra tags between VOL and the star: {name, label, action, right_action, active_file};
         # the tag turns LED red while active_file exists ($VARS and ~ are expanded)
         "buttons": [],
-        "actions": {"clock": "", "date": "", "volume": "", "star": "", "title": "", "cpu": "", "mem": "", "net": "",
+        "actions": {"clock": "", "date": "", "volume": "eva-ctl panel sound", "star": "", "title": "", "cpu": "", "mem": "", "net": "",
                     "music": ""},
     },
     "shot": {
@@ -88,6 +88,7 @@ DEFAULTS = {
         "berserk": 90,            # CPU or RAM at or above this % for berserk_seconds turns the stage orange (0 = never)
         "berserk_seconds": 30,
         "frame": True,            # the static hardware frame (brackets, tag, LOCK) around the focused window
+        "sound": True,            # the sound panel (click VOL, or eva-ctl panel sound)
     },
     "frame": {                    # the window frame's own pieces
         "brackets": True,         # bone corner brackets 12 px outside the window

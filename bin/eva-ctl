@@ -9,6 +9,7 @@
   eva-ctl alttab                the cast strip (bound to Alt+Tab)
   eva-ctl power                 the Third Impact power menu (bound to Super+M)
   eva-ctl panel NAME|close      toggle a named MFD panel, or close whichever one is open
+  eva-ctl panel sound|close     the sound panel (outputs, inputs, streams, quick toggles)
   eva-ctl eyecatch [N [NAME]]   play the workspace eye-catch (to try it)
   eva-ctl alarm [TEXT]          show the EMERGENCY band (to try it)
   eva-ctl bar show|hide

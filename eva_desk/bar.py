@@ -252,8 +252,11 @@ class Bar:
                 self.tray.secondary(what[1], x, y)
             else:
                 self.tray.activate(what[1], self.area, x, y)
-        elif what[0] == "volume" and button == 2:
-            _run("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+        elif what[0] == "volume":
+            if button == 2:
+                _run("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+            elif button == 1 and self.cfg["bar"]["actions"].get("volume"):
+                _run(self.cfg["bar"]["actions"]["volume"])
         elif self._button(what[0]):
             btn = self._button(what[0])
             cmd = btn.get("right_action") if button == 3 else btn.get("middle_action") if button == 2 else btn.get("action")

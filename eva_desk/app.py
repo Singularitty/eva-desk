@@ -98,6 +98,12 @@ class App(Gtk.Application):
         except Exception:
             traceback.print_exc()
         self.panels = {}
+        try:
+            if ov.get("sound"):
+                from .mfd.sound import SoundPanel
+                self.panels["sound"] = SoundPanel(self, cfg)
+        except Exception:
+            traceback.print_exc()
         self.frames = {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)

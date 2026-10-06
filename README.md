@@ -80,6 +80,8 @@ selected one gets a detail card on the right.
 
 <p align="center"><img src="docs/eva-bar.png" alt="the bar, calm and in EMERGENCY" width="100%"></p>
 
+**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile.
+
 **Bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
 workspace is urgent or the CPU is pegged it gets an orange warning strip (second row).
 
@@ -200,6 +202,7 @@ eva-ctl eyecatch 3 PROJECTS    # try the workspace card
 eva-ctl alarm "text"           # try the EMERGENCY band
 eva-ctl alttab                 # the window switcher
 eva-ctl power                  # the power menu
+eva-ctl panel sound|close      # the sound panel, or close whichever panel is open
 eva-ctl status | reload | quit
 ```
 

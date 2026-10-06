@@ -1,4 +1,5 @@
 """MFD drawing language tests: no compositor, no windows. Run: python3 -m unittest discover -s tests"""
+import json
 import os
 import sys
 import unittest
@@ -201,3 +202,183 @@ class Progress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Sound(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.mfd import sound
+        self.sound = sound
+        self.state = json.loads((Path(__file__).parent / "fixtures" / "audiostate.json").read_text())
+        self.m = sound.SoundModel(self.state, {"dnd": False, "night": True, "power": "balanced"})
+
+    def test_sections_and_rows(self):
+        self.assertEqual([s["key"] for s in self.m.sections], ["sinks", "sources", "apps", "recs", "quick"])
+        first = self.m.sections[0]["rows"][0]
+        self.assertEqual(first["kind"], "sink")
+        self.assertTrue(0.0 <= first["value"] <= 1.0)
+
+    def test_actions(self):
+        self.m.sel = (0, 0)
+        row = self.m.sections[0]["rows"][0]
+        self.assertEqual(self.m.action("right"), [("set_volume", "sink", row["id"], min(100, round(row["value"] * 100) + 5))])
+        self.assertEqual(self.m.action("mute"), [("toggle_mute", "sink", row["id"])])
+        self.assertEqual(self.m.action("dnd"), [("quick_toggle", "dnd")])
+        self.m.action("next_section"); self.assertEqual(self.m.sel[0], 1)
+        self.m.sel = (2, 0)
+        self.assertEqual(self.m.action("down"), [])                     # moving returns no calls
+        self.assertEqual(self.m.sel, (2, 1))
+        app = self.m.sections[2]["rows"][1]                              # the stream "down" moved to
+        self.assertEqual(self.m.pick(0), [("move", "sink-input", app["id"], self.m.sections[0]["rows"][0]["target"])])
+
+    def test_levels_update_in_place(self):
+        sid = self.m.sections[0]["rows"][0]["id"]
+        self.m.levels({f"sink{sid}": {"v": 12, "m": True}})
+        self.assertEqual((self.m.sections[0]["rows"][0]["value"], self.m.sections[0]["rows"][0]["muted"]), (0.12, True))
+
+    def test_sound_long_names_render(self):
+        import cairo
+        self.state["apps"][0]["app"] = "WEBRTC VoiceEngine"
+        self.state["apps"][0]["title"] = "Making a CHICAGO STYLE Deep dish pizza?!? #youtube #shorts " * 3
+        m = self.sound.SoundModel(self.state, {"dnd": False, "night": False, "power": "balanced"})
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
+        hits, sections = self.sound.draw_sound(cairo.Context(surf), 0, 0, 1100, 1300, m, False)
+        bars = [h for h in hits if isinstance(h[4], tuple)]
+        self.assertTrue(all(h[2] - h[0] > 300 for h in bars))            # the bar keeps its width
+        self.assertEqual(len(sections), 5)
+
+    def test_sound_no_signal_render(self):
+        import cairo
+        m = self.sound.SoundModel(None, {"dnd": False, "night": False, "power": "unknown"})
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
+        hits, sections = self.sound.draw_sound(cairo.Context(surf), 0, 0, 1100, 1300, m, True)
+        self.assertEqual(hits, [])
+        self.assertGreater(sum(surf.get_data()), 0)
+
+    # ---- beyond the brief: the model's edges and the panel's input routing
+
+    def test_volume_clamps_and_waits_for_levels(self):
+        self.m.sel = (1, 1)                                              # the webcam mic, at 100
+        self.assertEqual(self.m.action("right"), [("set_volume", "source", 68, 100)])
+        self.assertEqual(self.m.action("left"), [("set_volume", "source", 68, 95)])
+        self.assertEqual(self.m.sections[1]["rows"][1]["value"], 1.0)   # the levels line reports it
+        self.m.levels({"source68": {"v": 95, "m": False}})
+        self.assertEqual(self.m.action("left"), [("set_volume", "source", 68, 90)])
+        self.m.sel = (0, 0)
+        self.m.levels({"sink50": {"v": 3, "m": False}})
+        self.assertEqual(self.m.action("left"), [("set_volume", "sink", 50, 0)])
+
+    def test_default_only_for_devices(self):
+        self.m.sel = (0, 1)
+        self.assertEqual(self.m.action("default"), [("set_default", "sink", self.state["sinks"][1]["name"])])
+        self.m.sel = (2, 0)
+        self.assertEqual(self.m.action("default"), [])
+
+    def test_move_flows_across_sections_and_skips_empty(self):
+        state = dict(self.state, recs=[])
+        m = self.sound.SoundModel(state, {"dnd": False, "night": False, "power": "balanced"})
+        m.sel = (2, 2)                                                    # last app
+        m.move(1)
+        self.assertEqual(m.sel, (4, 0))                                   # recs are empty: straight to quick
+        m.move_section(-1)
+        self.assertEqual(m.sel[0], 2)
+        m.sel = (0, 0)
+        m.move(-1)
+        self.assertEqual(m.sel, (0, 0))                                   # clamped at the top
+
+    def test_no_state_selects_quick(self):
+        m = self.sound.SoundModel(None, {"dnd": False, "night": False, "power": "unknown"})
+        self.assertEqual(m.sel, (4, 0))
+        self.assertEqual(m.action("right"), [])
+
+    def test_levels_for_streams_and_recs(self):
+        self.m.levels({"app120": {"v": 40, "m": True}, "rec131": {"v": 150, "m": False}, "sink999": {"v": 1, "m": True}})
+        app = next(r for r in self.m.sections[2]["rows"] if r["id"] == 120)
+        rec = self.m.sections[3]["rows"][0]
+        self.assertEqual((app["value"], app["muted"]), (0.4, True))
+        self.assertEqual(rec["value"], 1.0)                              # clamped to 0..1
+
+    def test_pick_on_a_rec_and_out_of_range(self):
+        self.m.sel = (3, 0)
+        self.assertEqual(self.m.pick(1), [("move", "source-output", 131, self.state["sources"][1]["name"])])
+        self.assertEqual(self.m.pick(9), [])
+        self.m.sel = (0, 0)
+        self.assertEqual(self.m.pick(0), [])                              # devices have no picker
+
+    def test_set_from_bar_selects_and_sets(self):
+        self.assertEqual(self.m.set_from_bar(2, 1, 0.333), [("set_volume", "sink-input", 120, 33)])
+        self.assertEqual(self.m.sel, (2, 1))
+        self.assertEqual(self.m.set_from_bar(2, 1, 1.7), [("set_volume", "sink-input", 120, 100)])
+
+    def test_quick_toggles_update_locally(self):
+        self.assertEqual(self.m.action("night"), [("quick_toggle", "night")])
+        self.assertFalse(self.m.quick["night"])
+        self.assertEqual(self.m.action("power"), [("quick_toggle", "power")])
+        self.assertEqual(self.m.quick["power"], "power-saver")            # the script's cycle order
+
+    def test_sound_importable_without_gtk(self):
+        import subprocess
+        code = ("import sys; sys.path.insert(0, %r); import eva_desk.mfd.sound; "
+                "print('gi.repository.Gtk' in sys.modules)") % str(Path(__file__).resolve().parent.parent)
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(out.stdout.strip(), "False", out.stderr)
+
+
+class SoundRouting(unittest.TestCase):
+    """SoundControls (SoundPanel minus GTK): keys, clicks and scrolls turn into audio calls."""
+
+    def setUp(self):
+        from eva_desk.mfd import sound
+        self.sound = sound
+        state = json.loads((Path(__file__).parent / "fixtures" / "audiostate.json").read_text())
+        self.p = sound.SoundControls.__new__(sound.SoundControls)
+        self.p.model = sound.SoundModel(state, {"dnd": False, "night": False, "power": "balanced"})
+        self.p.no_signal = False
+        self.p.scale = 1
+        self.p.invalidate = mock.Mock()
+        self.audio = mock.patch.multiple(sound.audio, set_volume=mock.DEFAULT, toggle_mute=mock.DEFAULT,
+                                         set_default=mock.DEFAULT, move=mock.DEFAULT, quick_toggle=mock.DEFAULT)
+        self.calls = self.audio.start()
+        self.addCleanup(self.audio.stop)
+
+    def test_keys(self):
+        self.assertTrue(self.p.on_key("Right", 0))
+        self.calls["set_volume"].assert_called_once_with("sink", 50, 73)
+        self.assertTrue(self.p.on_key("j", 0))
+        self.assertEqual(self.p.model.sel, (0, 1))
+        self.p.on_key("m", 0)
+        self.calls["toggle_mute"].assert_called_once_with("sink", 61)
+        self.p.on_key("2", 0)
+        self.calls["quick_toggle"].assert_called_once_with("night")
+        self.p.on_key("Tab", 0)
+        self.assertEqual(self.p.model.sel[0], 1)
+        self.assertFalse(self.p.on_key("q", 0))
+
+    def test_picker_by_return_and_digit(self):
+        self.p.model.sel = (2, 1)                                         # Firefox, on the Scarlett
+        self.p.on_key("Return", 0)
+        self.assertEqual(self.p.model.picker, 1)                           # starts on its current device
+        self.p.on_key("Left", 0)
+        self.p.on_key("Return", 0)
+        self.calls["move"].assert_called_once_with("sink-input", 120, self.p.model.sections[0]["rows"][0]["target"])
+        self.assertIsNone(self.p.model.picker)
+        self.p.on_key("Return", 0)
+        self.p.on_key("2", 0)                                              # a digit picks, not a quick toggle
+        self.assertEqual(self.calls["move"].call_args.args[2], self.p.model.sections[0]["rows"][1]["target"])
+        self.calls["quick_toggle"].assert_not_called()
+
+    def test_clicks_and_scroll(self):
+        import cairo
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)
+        self.p.hits, self.p.sections = self.sound.draw_sound(cairo.Context(surf), 0, 0, 1100, 1300, self.p.model, False)
+        bar = next(h for h in self.p.hits if isinstance(h[4], tuple) and h[4][0] == "bar" and h[4][1:] == (1, 0))
+        self.p.on_click(bar[0] + 0.25 * (bar[2] - bar[0]), (bar[1] + bar[3]) / 2, 1)
+        self.calls["set_volume"].assert_called_once_with("source", 55, 25)
+        self.assertEqual(self.p.model.sel, (1, 0))
+        row = next(h for h in self.p.hits if h[4] == (2, 2))
+        self.p.on_click(row[0] + 4, row[1] + 4, 1)
+        self.assertEqual(self.p.model.sel, (2, 2))
+        self.p.on_scroll(row[0] + 4, row[1] + 4, 1)                       # scroll down: -5
+        self.calls["set_volume"].assert_called_with("sink-input", 130, 95)
+        dnd = next(h for h in self.p.hits if h[4] == "dnd")
+        self.p.on_click(dnd[0] + 1, dnd[1] + 1, 1)
+        self.calls["quick_toggle"].assert_called_once_with("dnd")

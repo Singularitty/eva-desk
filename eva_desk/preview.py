@@ -68,6 +68,19 @@ def render_all(cfg, out, w=3440, h=1440):
     # the MFD drawing language: a screen with rows, a key row and lamps, and a lone segbar with a peak
     save("mfd_sampler", 1200, 700, lambda cr: _mfd_sampler(cr, 1200, 700))
 
+    # the sound panel, from the audiostate fixture, and its NO SIGNAL screen (an installed copy
+    # has no tests/ folder: skip the panel there rather than stop the whole render)
+    import json
+    from .mfd.sound import SoundModel, draw_sound
+    fixture_path = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "audiostate.json"
+    if fixture_path.exists():
+        fixture = json.loads(fixture_path.read_text())
+        quick = {"dnd": False, "night": True, "power": "balanced"}
+        save("sound", 1100, 1300, lambda cr: draw_sound(cr, 0, 0, 1100, 1300, SoundModel(fixture, quick), False))
+        save("sound_no_signal", 1100, 1300, lambda cr: draw_sound(cr, 0, 0, 1100, 1300, SoundModel(None, quick), True))
+    else:
+        print("sound: skipped (no tests/fixtures/audiostate.json in this copy)")
+
     # bar
     from .bar import Bar
     bar = Bar.__new__(Bar)

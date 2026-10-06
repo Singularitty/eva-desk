@@ -61,7 +61,7 @@ tray = true               # app tray icons: click activates, middle click, right
 [bar.actions]             # shell commands for clicks on the bar (empty = nothing)
 clock = ""
 date = ""
-volume = ""               # scroll on VOL changes the volume, middle click mutes
+volume = "eva-ctl panel sound"   # click: the sound panel; scroll changes the volume, middle click mutes
 star = ""
 title = ""
 cpu = ""                  # e.g. a system monitor: "kitty -e btop"
@@ -93,6 +93,7 @@ alarm_band = true         # EMERGENCY band under the bar for critical notificati
 alarm_seconds = 120       # the band leaves by itself after this
 alttab = true             # Alt+Tab as the cast strip (release Alt to jump, Esc cancels)
 power = true              # the Third Impact power menu on Super+M (Enter twice for shutdown)
+sound = true              # the sound panel: click VOL on the bar, or eva-ctl panel sound
 [overlays.names]          # workspace names on the eye-catch
 # 3 = "PROJECTS"
 

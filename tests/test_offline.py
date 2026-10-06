@@ -100,6 +100,38 @@ class Logic(unittest.TestCase):
         self.assertEqual(self.step(3, [win(3, fs=1)]), ("herald", False, True))        # herald anywhere
         self.assertEqual(self.step(1, [win(1, cls="steam_app_42", fs=2)]), (None, False, False))  # game
 
+    def test_command_panel_toggle(self):
+        calls = []
+        class P:
+            name = "sound"
+            def toggle(self, gdk): calls.append(("toggle", gdk)); return "ok"
+            def close(self): calls.append("close")
+        self.app.panels, self.app.launcher, self.app.overlays = {"sound": P()}, None, {}
+        self.app.focused_gdk = lambda: None
+        self.assertEqual(self.app.command("panel sound"), "ok")
+        self.assertEqual(self.app.command("panel close"), "ok")
+        self.assertEqual(self.app.command("panel music"), "music disabled")
+        self.assertEqual(calls, [("toggle", None), "close"])
+
+    def test_bar_volume_clicks(self):
+        from eva_desk import bar as B
+        b = B.Bar.__new__(B.Bar)
+        b.cfg = self.cfg
+        b.hits = [(0, 50, ("volume",))]
+        b.tray = None
+        gesture = mock.Mock()
+        with mock.patch.object(B, "_run") as run:
+            gesture.get_current_button.return_value = 1
+            b._click(gesture, 1, 10, 5)
+            run.assert_called_once_with("eva-ctl panel sound")
+            gesture.get_current_button.return_value = 2
+            b._click(gesture, 1, 10, 5)
+            run.assert_called_with("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+            gesture.get_current_button.return_value = 3
+            b._click(gesture, 1, 10, 5)
+            self.assertEqual(run.call_count, 2)                           # right click does nothing
+        self.assertTrue(self.cfg["overlays"]["sound"])
+
     def test_figure_everywhere_and_toggle(self):
         self.cfg["figures"].update(figure="all")
         self.app.figure_set = set(config.figure_workspaces(self.cfg))
