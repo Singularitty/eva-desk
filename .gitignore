@@ -6,3 +6,5 @@ render/
 tools/gen/raw/
 tools/gen/cut/
 tools/gen/final/
+.superpowers/
+.worktrees/
