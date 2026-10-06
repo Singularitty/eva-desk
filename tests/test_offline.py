@@ -113,6 +113,92 @@ class Logic(unittest.TestCase):
         self.assertEqual(self.app.command("panel music"), "music disabled")
         self.assertEqual(calls, [("toggle", None), "close"])
 
+    def _live_panel(self):
+        """A real Panel (no GTK: built with `__new__`) registered in the app, already open."""
+        from eva_desk.mfd.panel import Panel
+        p = Panel.__new__(Panel)
+        p.app, p.cfg, p.name, p.anchor = self.app, self.cfg, "sound", "left"
+        p.pwidth, p.pheight, p.w, p.h, p.scale = 1100, 1300, 3440, 1440, 1
+        p.px = p.py = p.pw = p.ph = 0
+        p._closing, p.t, p._close_from = False, 1.0, 1.0
+        p.win = type("W", (), {"visible": False, "get_visible": lambda self: self.visible,
+                               "get_surface": lambda self: None})()
+        p.animate, p.on_open, p.on_close = mock.Mock(), mock.Mock(), mock.Mock()
+        p.show = lambda: setattr(p.win, "visible", True)
+        self.app.panels = {"sound": p}
+        self.app.overlays = getattr(self.app, "overlays", {})
+        self.app.focused_gdk = lambda: None
+        self.assertEqual(p.open(None), "ok")
+        return p
+
+    def _launcher(self):
+        from eva_desk import launcher as L
+        lau = L.Launcher.__new__(L.Launcher)
+        lau.app, lau.cfg, lau.hypr = self.app, self.cfg, self.app.hypr
+        lau.win = mock.Mock()
+        lau.win.get_visible.return_value = False
+        lau.area = mock.Mock()
+        lau.apps, lau.apps_at, lau.counts = [], time.time(), {}
+        lau.query, lau.sel, lau.results = "", 0, []
+        lau.blink_id, lau.idle_id = 1, None                    # a blink already armed: no new timer
+        lau._arm_idle = mock.Mock()
+        return lau
+
+    def test_launcher_power_and_alttab_close_the_panel(self):
+        from eva_desk import overlays as O
+        self.app.launcher = self._launcher()
+        p = self._live_panel()
+        self.assertEqual(self.app.command("launcher"), "ok")
+        self.assertTrue(p._closing)                             # the launcher took over: the panel snaps shut
+        p.animate.assert_called_with(190, on_done=p._finish_close)
+        for cls, key in ((O.PowerMenu, "power"), (O.AltTab, "alttab")):
+            o = cls.__new__(cls)
+            o.app, o.cfg, o.guard = self.app, self.cfg, None
+            o.place, o._render, o.show = mock.Mock(), mock.Mock(), mock.Mock()
+            o.win = mock.Mock()
+            o.win.get_visible.return_value = False
+            self.app.overlays = {key: o}
+            self.app.hypr.state = {"clients": [win(1), win(2, addr="0x2")]}
+            p = self._live_panel()
+            self.app.overlays = {key: o}
+            with mock.patch("eva_desk.overlays.GLib.timeout_add", return_value=3):
+                self.assertEqual(self.app.command(key), "ok")
+            self.assertTrue(p._closing, key)
+
+    def test_frames_on_every_monitor(self):
+        built = []
+
+        class FakeFrame:
+            def __init__(self, app, cfg, gdk_monitor, name):
+                self.gdk, self.name, self.updates, self.destroyed = gdk_monitor, name, 0, False
+                built.append(self)
+
+            def update(self):
+                self.updates += 1
+
+            def destroy(self):
+                self.destroyed = True
+
+        main, side = object(), object()
+        self.app.stages, self.app.bars, self.app.frames = {}, {}, {}
+        with mock.patch("eva_desk.gtkutil.monitors", return_value={"DP-3": main, "HDMI-A-1": side}), \
+                mock.patch("eva_desk.frame.Frame", FakeFrame):
+            self.app._sync_components = type(self.app)._sync_components.__get__(self.app)
+            self.app._sync_components([])                      # no mains at all: frames still go everywhere
+            self.assertEqual(sorted(self.app.frames), [m["name"] for m in MONS])
+            self.assertEqual([f.updates for f in built], [1, 1])
+            self.app._sync_frames({"DP-3": main, "HDMI-A-1": side})
+            self.assertEqual(len(built), 2)                    # one frame per monitor, not rebuilt
+            self.app._sync_frames({"DP-3": main})              # the side monitor went away
+            self.assertEqual(sorted(self.app.frames), ["DP-3"])
+            self.assertTrue(next(f for f in built if f.name == "HDMI-A-1").destroyed)
+            other = object()
+            self.app._sync_frames({"DP-3": other})             # a new monitor behind the same name
+            self.assertIs(self.app.frames["DP-3"].gdk, other)
+            self.cfg["overlays"]["frame"] = False
+            self.app._sync_frames({"DP-3": other})
+            self.assertEqual(self.app.frames, {})
+
     def test_bar_volume_clicks(self):
         from eva_desk import bar as B
         b = B.Bar.__new__(B.Bar)
@@ -236,6 +322,42 @@ class FrameGeometry(unittest.TestCase):
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 500)
         self.frame.draw_frame(cairo.Context(surf), {"x": 100, "y": 80, "w": 600, "h": 360, "cls": "kitty", "ws": 2, "floating": False}, self.cfg["frame"])
         self.assertGreater(sum(surf.get_data()), 0)       # something was painted
+
+    def test_frame_brackets_stay_on_screen_and_under_the_bar(self):
+        geo = {"x": 12, "y": 68, "w": 3416, "h": 1360, "cls": "kitty", "ws": 4, "floating": False}
+        bounds = (0, 56, 3440, 1440)
+        rects = self.frame.bracket_rects(geo, bounds)
+        self.assertEqual(len(rects), 8)
+        for x, y, w, h in rects:
+            self.assertGreaterEqual(x, 2)
+            self.assertGreaterEqual(y, 56 + 2)
+            self.assertLessEqual(x + w, 3440 - 2)
+            self.assertLessEqual(y + h, 1440 - 2)
+        free = {"x": 300, "y": 160, "w": 1400, "h": 900, "cls": "kitty", "ws": 2, "floating": False}
+        self.assertEqual(self.frame.bracket_rects(free, bounds), self.frame.bracket_rects(free))   # room: untouched
+        self.assertEqual(self.frame.bracket_rects(free)[0], (300 - 12 - 2, 160 - 12 - 2, 24 + 2, 4))
+
+    def test_frame_paints_nothing_on_the_bar_or_the_edges(self):
+        import cairo
+        geo = {"x": 12, "y": 68, "w": 3416, "h": 1360, "cls": "kitty", "ws": 4, "floating": False}
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 3440, 1440)
+        self.frame.draw_frame(cairo.Context(surf), geo, self.cfg["frame"], bounds=(0, 56, 3440, 1440))
+        surf.flush()
+        data, stride = bytes(surf.get_data()), surf.get_stride()
+        self.assertFalse(any(data[:58 * stride]))                       # the bar and 2 px below it: clean
+        self.assertTrue(any(data[58 * stride:90 * stride]))             # the tag, LOCK and top brackets moved down
+        for row in range(1440):
+            line = data[row * stride:(row + 1) * stride]
+            self.assertFalse(any(line[:8]) or any(line[-8:]), row)      # 2 px clear at the left and right
+        self.assertFalse(any(data[1438 * stride:]))                     # and at the bottom
+
+    def test_frame_bar_height_only_where_there_is_a_bar(self):
+        f = self.frame.Frame.__new__(self.frame.Frame)
+        f.cfg, f.name = self.cfg, "HDMI-A-1"
+        f.app = type("A", (), {"bars": {"DP-3": object()}})()
+        self.assertEqual(f.bar_height(), 0)                             # the side monitor has no bar
+        f.name = "DP-3"
+        self.assertEqual(f.bar_height(), int(self.cfg["bar"]["height"]))
 
     def test_frame_destroy_drops_poll(self):
         f = self.frame.Frame.__new__(self.frame.Frame)

@@ -104,7 +104,7 @@ class App(Gtk.Application):
                 self.panels["sound"] = SoundPanel(self, cfg)
         except Exception:
             traceback.print_exc()
-        self.frames = {}
+        self.frames, self.frame_gdk = {}, {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)
         self.hypr.listen(self._event)
@@ -228,14 +228,12 @@ class App(Gtk.Application):
         from .gtkutil import monitors
         gdk = monitors()
         want = {m["name"] for m in mains if m["name"] in gdk}
-        for name in list(set(self.stages) | set(self.bars) | set(self.frames)):
+        for name in list(set(self.stages) | set(self.bars)):
             if name not in want or self.gdk_of.get(name) is not gdk.get(name):
                 if name in self.stages:
                     self.stages.pop(name).destroy()
                 if name in self.bars:
                     self.bars.pop(name).destroy()
-                if name in self.frames:
-                    self.frames.pop(name).destroy()
                 self.prev.pop(name, None)
         for name in want:
             self.gdk_of[name] = gdk[name]
@@ -250,11 +248,23 @@ class App(Gtk.Application):
                          volume=self.volume_state[0], muted=self.volume_state[1], resources=self.res_state,
                          music=self.music_state, tray=self.tray.visible() if self.tray else [])
                 b.set_visible(True)
-            if name not in self.frames and self.cfg["overlays"]["frame"]:
-                from .frame import Frame
-                f = Frame(self, self.cfg, gdk[name], name)
-                self.frames[name] = f
-                f.update()                 # a freshly built frame has no geometry yet: compute it now
+        self._sync_frames(gdk)
+
+    def _sync_frames(self, gdk):
+        """One window frame per enabled monitor (the side monitor too, not only the mains), keyed
+        by monitor name; rebuilt when the monitor behind a name changes."""
+        want = set(gdk) if self.cfg["overlays"]["frame"] else set()
+        frame_gdk = self.__dict__.setdefault("frame_gdk", {})
+        for name in list(self.frames):
+            if name not in want or frame_gdk.get(name) is not gdk.get(name):
+                self.frames.pop(name).destroy()
+                frame_gdk.pop(name, None)
+        for name in sorted(want - set(self.frames)):
+            from .frame import Frame
+            f = Frame(self, self.cfg, gdk[name], name)
+            self.frames[name] = f
+            frame_gdk[name] = gdk[name]
+            f.update()                     # a freshly built frame has no geometry yet: compute it now
 
     def refresh(self):
         cfg = self.cfg
@@ -430,7 +440,7 @@ class App(Gtk.Application):
         return p.open(gdk)
 
     def close_panels(self, except_name=None):
-        for name, p in list(self.panels.items()):
+        for name, p in list(getattr(self, "panels", {}).items()):
             if name != except_name:
                 p.close()
 

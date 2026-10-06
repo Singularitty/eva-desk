@@ -64,6 +64,9 @@ def render_all(cfg, out, w=3440, h=1440):
 
     from . import frame
     save("frame", w, h, lambda cr: frame.draw_frame(cr, {"x": 300, "y": 160, "w": 1400, "h": 900, "cls": "kitty", "ws": 2, "floating": False}, cfg["frame"]))
+    bar_h = int(cfg["bar"]["height"])                    # a tiled window touching every edge: the frame stays on-screen, under the bar
+    edge = {"x": 12, "y": bar_h + 12, "w": w - 24, "h": h - bar_h - 24, "cls": "kitty", "ws": 2, "floating": False}
+    save("frame_edge", w, h, lambda cr: frame.draw_frame(cr, edge, cfg["frame"], bounds=(0, bar_h, w, h)))
 
     # the MFD drawing language: a screen with rows, a key row and lamps, and a lone segbar with a peak
     save("mfd_sampler", 1200, 700, lambda cr: _mfd_sampler(cr, 1200, 700))

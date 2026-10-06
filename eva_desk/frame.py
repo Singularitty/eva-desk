@@ -33,48 +33,82 @@ def geometry(active, monitors, cfg):
                          "cls": cls, "ws": ws, "floating": bool(active.get("floating", False))}
 
 
-def draw_frame(cr, geo, cfg_frame):
-    """Brackets, the class/workspace tag and the LOCK readout around `geo`'s rectangle."""
+LEG, OUT, LINE = 24, 12, 4          # bracket leg length, distance outside the window, stroke width
+EDGE = 2                            # the painted frame keeps this far inside its bounds
+
+
+def corners(geo, bounds=None):
+    """The four bracket corners as (cx, cy, sx, sy): the corner point on the stroke's centre line
+    and the direction its legs run. They sit OUT px outside `geo`'s rectangle; with `bounds`
+    = (x0, y0, x1, y1) (the monitor less the bar) each corner is pulled in so the whole stroke
+    stays EDGE px inside -- an edge-touching window's brackets never fall off-screen or onto the bar."""
     x, y, w, h = geo["x"], geo["y"], geo["w"], geo["h"]
+    left, top, right, bottom = x - OUT, y - OUT, x + w + OUT, y + h + OUT
+    if bounds is not None:
+        inset = EDGE + LINE / 2
+        x0, y0, x1, y1 = bounds[0] + inset, bounds[1] + inset, bounds[2] - inset, bounds[3] - inset
+        left, right = min(max(left, x0), x1), max(min(right, x1), x0)
+        top, bottom = min(max(top, y0), y1), max(min(bottom, y1), y0)
+    return ((left, top, 1, 1), (right, top, -1, 1), (left, bottom, 1, -1), (right, bottom, -1, -1))
+
+
+def bracket_rects(geo, bounds=None):
+    """The painted area of every bracket leg as (x, y, w, h): two per corner, the horizontal leg
+    (which carries the square corner) and the vertical one. Exactly what `draw_frame` fills."""
+    half = LINE / 2
+    out = []
+    for cx, cy, sx, sy in corners(geo, bounds):
+        hx0, hx1 = sorted((cx - sx * half, cx + sx * LEG))
+        vy0, vy1 = sorted((cy + sy * half, cy + sy * LEG))
+        out.append((hx0, cy - half, hx1 - hx0, LINE))
+        out.append((cx - half, vy0, LINE, vy1 - vy0))
+    return out
+
+
+def draw_frame(cr, geo, cfg_frame, bounds=None):
+    """Brackets, the class/workspace tag and the LOCK readout around `geo`'s rectangle, kept
+    inside `bounds` (x0, y0, x1, y1) when given (see `corners`). The tag and LOCK ride on the
+    top edge, so when the top corners are pulled down below the bar they move down with them."""
+    (left, top, _, _), (right, _, _, _) = corners(geo, bounds)[:2]
+    floor = bounds[1] + EDGE if bounds is not None else float("-inf")
     if cfg_frame.get("brackets", True):
-        _draw_brackets(cr, x, y, w, h)
+        _draw_brackets(cr, bracket_rects(geo, bounds))
     if cfg_frame.get("tag", True) and geo.get("ws", 0) > 0:
-        _draw_tag(cr, x, y, geo["cls"], geo["ws"])
+        _draw_tag(cr, left + OUT, top + OUT, geo["cls"], geo["ws"], floor)
     if cfg_frame.get("lock", True):
-        _draw_lock(cr, x, y, w)
+        _draw_lock(cr, right - OUT, top + OUT, floor)
 
 
-def _draw_brackets(cr, x, y, w, h):
-    leg, out = 24, 12
-    cr.set_line_width(4)
+def _draw_brackets(cr, rects):
     d.rgba(cr, d.BONE)
-    for cx, cy, sx, sy in ((x - out, y - out, 1, 1), (x + w + out, y - out, -1, 1),
-                           (x - out, y + h + out, 1, -1), (x + w + out, y + h + out, -1, -1)):
-        cr.move_to(cx + sx * leg, cy)
-        cr.line_to(cx, cy)
-        cr.line_to(cx, cy + sy * leg)
-        cr.stroke()
+    for x, y, w, h in rects:
+        cr.rectangle(x, y, w, h)
+    cr.fill()
 
 
-def _draw_tag(cr, x, y, cls, ws):
+def _draw_tag(cr, x, y, cls, ws, floor):
+    """The tag block, its left edge 18 px in from the window's left edge `x`, centred-ish on the
+    top edge `y` (in the border line); never above `floor`."""
     cls_lay = d.layout(cr, cls.upper(), d.F_DISPLAY, 14, weight=d.DISPLAY_WEIGHT)
     ws_lay = d.layout(cr, f"{int(ws):02d}", d.F_DISPLAY, 14, weight=d.DISPLAY_WEIGHT)
     cw, ch = d.text_size(cls_lay)
     ww, wh = d.text_size(ws_lay)
     pad, gap, bh = 10, 10, 22
-    bx, by = x + 18, y - 12
+    bx, by = x + 18, max(y - 12, floor)
     bw = pad + cw + gap + ww + pad
     d.block(cr, bx, by, bw, bh, d.BONE)
     d.draw_text(cr, cls_lay, bx + pad, by + (bh - ch) / 2, d.INK)
     d.draw_text(cr, ws_lay, bx + pad + cw + gap, by + (bh - wh) / 2, d.CLARET)
 
 
-def _draw_lock(cr, x, y, w):
+def _draw_lock(cr, x, y, floor):
+    """The LOCK block, its right edge 18 px in from the window's right edge `x`, centred on the
+    top edge `y`; never above `floor`."""
     lay = d.layout(cr, "LOCK", d.F_META, 11, spacing=3)
     lw, lh = d.text_size(lay)
     pad, inset = 8, 18
     bw, bh = lw + 2 * pad, lh + 2 * pad
-    bx, by = x + w - inset - bw, y - bh / 2
+    bx, by = x - inset - bw, max(y - bh / 2, floor)
     d.block(cr, bx, by, bw, bh, d.INK)
     d.draw_text(cr, lay, bx + pad, by + pad, d.GOLD)
 
@@ -131,7 +165,13 @@ class Frame(_Overlay):
             self.poll_id = None
         super().destroy()
 
+    def bar_height(self):
+        """The bar's height on this monitor (logical px), or 0 when it has no bar."""
+        if not self.cfg["bar"]["enabled"] or self.name not in getattr(self.app, "bars", {}):
+            return 0
+        return int(self.cfg["bar"]["height"])
+
     def _paint(self, snap, w, h):
         if self.geo:
             cr = snap.append_cairo(rect(0, 0, w, h))
-            draw_frame(cr, self.geo, self.cfg["frame"])
+            draw_frame(cr, self.geo, self.cfg["frame"], bounds=(0, self.bar_height(), w, h))
