@@ -65,6 +65,9 @@ def render_all(cfg, out, w=3440, h=1440):
     from . import frame
     save("frame", w, h, lambda cr: frame.draw_frame(cr, {"x": 300, "y": 160, "w": 1400, "h": 900, "cls": "kitty", "ws": 2, "floating": False}, cfg["frame"]))
 
+    # the MFD drawing language: a screen with rows, a key row and lamps, and a lone segbar with a peak
+    save("mfd_sampler", 1200, 700, lambda cr: _mfd_sampler(cr, 1200, 700))
+
     # bar
     from .bar import Bar
     bar = Bar.__new__(Bar)
@@ -109,3 +112,30 @@ def render_all(cfg, out, w=3440, h=1440):
                    ("app", _App("Terminal Settings", "")), ("app", _App("Files", "")), ("web", "term")]
     lau.counts["terminal.desktop"] = 214
     save("launcher", w, h, lambda cr: (L._background(cr, w, h), lau._draw(None, cr, w, h)))
+
+
+def _mfd_sampler(cr, w, h):
+    """One MFD screen: three list rows, a key row and three lamps (off / on / hot), plus a lone
+    segbar with a peak -- the sampler for the panel drawing language."""
+    from .mfd import widgets as M
+
+    d.rgba(cr, d.col("ink_deep"))
+    cr.paint()
+    cx, cy, cw, ch = M.screen(cr, 40, 40, w - 80, h - 140, "AUDIO OUTPUT", hot="HOT")
+
+    items = [
+        {"label": "AG346UCD", "sub": "HDMI · DEFAULT", "value": 0.68, "peak": None, "muted": False, "colour": None},
+        {"label": "USB HEADSET", "sub": "USB · 48 kHz", "value": 0.42, "peak": 0.55, "muted": False, "colour": None},
+        {"label": "HDMI MONITOR 2", "sub": "DISCONNECTED", "value": None, "peak": None, "muted": True, "colour": None},
+    ]
+    M.rows(cr, cx, cy, cw, items, selected=0, row_h=40)
+
+    key_y = cy + ch - 26
+    M.keyrow(cr, cx, key_y, ["MUTE", "UP", "DOWN"], active=1)
+
+    lamp_y = key_y
+    M.lamp(cr, cx + cw - 3 * 30, lamp_y, 16, False)
+    M.lamp(cr, cx + cw - 2 * 30, lamp_y, 16, True)
+    M.lamp(cr, cx + cw - 1 * 30, lamp_y, 16, True, hot=True)
+
+    M.segbar(cr, 40, h - 70, w - 80, 14, 0.8, d.GOLD, peak=0.92)
