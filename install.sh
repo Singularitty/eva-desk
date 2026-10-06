@@ -57,7 +57,7 @@ if [ -n "$SYSTEM" ]; then
     for d in eva_desk assets hypr bin tools extras gtk greeter config; do cp -r "$HERE/$d" "$SHARE/$d"; done
     cp "$HERE/install.sh" "$HERE/uninstall.sh" "$HERE/LICENSE" "$SHARE/"
     find "$SHARE" -name __pycache__ -type d -prune -exec rm -rf {} +
-    chmod +x "$SHARE/bin/"* "$SHARE/tools/"*.py "$SHARE/install.sh" "$SHARE/uninstall.sh"
+    chmod +x "$SHARE/bin/"* "$SHARE/tools/"*.py "$SHARE/tools/sources/"* "$SHARE/install.sh" "$SHARE/uninstall.sh"
     for b in eva-desk eva-ctl eva-extras; do ln -sf "../share/eva-desk/bin/$b" "$SYSTEM/bin/$b"; done
     printf '#!/bin/sh\nexec %s/share/eva-desk/install.sh --user "$@"\n' "$SYS_PREFIX" > "$SYSTEM/bin/eva-desk-setup"
     chmod +x "$SYSTEM/bin/eva-desk-setup"

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# audio-set - write helper for the osettings audio panel (pactl wrapper).
+#   audio-set vol     sink|source|sink-input|source-output ID VALUE   (VALUE 0-100, may be float)
+#   audio-set mute    sink|source|sink-input|source-output ID         (toggle)
+#   audio-set default sink|source NAME
+#   audio-set move    sink-input|source-output ID TARGET_NAME
+action="$1" kind="$2" id="$3" arg="$4"
+case "$kind" in
+    sink|source|sink-input|source-output) ;;
+    *) exit 1 ;;
+esac
+[ -z "$id" ] && exit 1
+
+case "$action" in
+    vol)
+        v=$(printf '%.0f' "$arg" 2>/dev/null) || exit 1
+        (( v < 0 )) && v=0
+        (( v > 100 )) && v=100
+        exec pactl "set-$kind-volume" "$id" "${v}%"
+        ;;
+    mute)
+        exec pactl "set-$kind-mute" "$id" toggle
+        ;;
+    default)
+        [[ "$kind" == sink || "$kind" == source ]] || exit 1
+        exec pactl "set-default-$kind" "$id"
+        ;;
+    move)
+        [[ "$kind" == sink-input || "$kind" == source-output ]] || exit 1
+        [ -z "$arg" ] && exit 1
+        exec pactl "move-$kind" "$id" "$arg"
+        ;;
+esac
+exit 1

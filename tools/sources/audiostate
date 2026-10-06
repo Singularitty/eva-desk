@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# audiostate - deflisten source for the eww "osettings" audio panel.
+# Prints one JSON line on start and after every PulseAudio/PipeWire event that
+# touches sinks, sources, streams or the server (debounced ~100 ms):
+#   {"sinks":[...],"sources":[...],"apps":[...],"recs":[...]}
+# Device: {id,name,friendly,short,sub,desc,icon,volume,muted,default}
+# Stream: {index,app,title,icon,glyph,volume,muted,corked,sink|source}
+# Usage: audiostate [--struct|--levels] [--once]
+#   --struct  layout only (no volume/mute) -> deflisten ostg_audio
+#   --levels  {"sink60":{"v":23,"m":false},"app842":{...},...} -> deflisten ostg_levels
+#   --once    print one snapshot and exit (default: listen forever)
+
+export LC_ALL=C
+ICON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/eww/audio-icons"
+mkdir -p "$ICON_CACHE" 2>/dev/null
+
+# Resolve an icon file path for an app (cached). Prints "" if none found.
+icon_for() {
+    local key path cand
+    key=$(printf '%s' "$1" | tr '[:upper:]/ ' '[:lower:]__')
+    [ -z "$key" ] && return
+    if [ -f "$ICON_CACHE/$key" ]; then
+        cat "$ICON_CACHE/$key"
+        return
+    fi
+    path=""
+    for cand in "$@"; do
+        [ -z "$cand" ] && continue
+        # prefer scalable svg, otherwise a 64px-ish png
+        path=$(geticons -s 64 "$cand" 2>/dev/null | grep -m1 '\.svg$')
+        [ -z "$path" ] && path=$(geticons -s 64 "$cand" 2>/dev/null | head -n1)
+        [ -n "$path" ] && break
+        cand=$(printf '%s' "$cand" | tr '[:upper:]' '[:lower:]')
+        path=$(geticons -s 64 "$cand" 2>/dev/null | grep -m1 '\.svg$')
+        [ -z "$path" ] && path=$(geticons -s 64 "$cand" 2>/dev/null | head -n1)
+        [ -n "$path" ] && break
+    done
+    printf '%s' "$path" > "$ICON_CACHE/$key"
+    printf '%s' "$path"
+}
+
+snapshot() {
+    local sinks sources inputs outputs info icons apps_names line
+    sinks=$(pactl --format=json list sinks 2>/dev/null) || sinks='[]'
+    sources=$(pactl --format=json list sources 2>/dev/null) || sources='[]'
+    inputs=$(pactl --format=json list sink-inputs 2>/dev/null) || inputs='[]'
+    outputs=$(pactl --format=json list source-outputs 2>/dev/null) || outputs='[]'
+    info=$(pactl --format=json info 2>/dev/null) || info='{}'
+    [ -z "$sinks" ] && sinks='[]'
+    [ -z "$sources" ] && sources='[]'
+    [ -z "$inputs" ] && inputs='[]'
+    [ -z "$outputs" ] && outputs='[]'
+    [ -z "$info" ] && info='{}'
+
+    # icon lookup for every distinct app (icon_name, binary, app name)
+    icons='{}'
+    [ "$MODE" == "levels" ] || while IFS=$'\t' read -r key icn bin nm; do
+        [ -z "$key" ] && continue
+        line=$(icon_for "$key" "$icn" "$bin" "$nm")
+        icons=$(gojq -c --arg k "$key" --arg v "$line" '. + {($k): $v}' <<<"$icons")
+    done < <(gojq -r -s '(.[0] + .[1])[] | .properties as $p
+        | ($p["application.name"] // "") as $n
+        | select($n != "")
+        | [$n, ($p["application.icon_name"] // ""), ($p["application.process.binary"] // ""), ($n|ascii_downcase)] | @tsv' \
+        <<<"$inputs$outputs" 2>/dev/null | sort -u)
+
+    gojq -n -c \
+        --argjson sinks "$sinks" --argjson sources "$sources" \
+        --argjson inputs "$inputs" --argjson outputs "$outputs" \
+        --argjson info "$info" --argjson icons "$icons" --arg mode "$MODE" '
+      def pct: [ (.volume // {})[] | (.value_percent // "0%") | rtrimstr("%") | tonumber ]
+               | if length == 0 then 0 else (add / length | round) end;
+      def clean: gsub(" (Analog|Digital) Stereo( \\(HDMI[^)]*\\))?"; "")
+               | gsub(" Mono(-fallback)?$"; "") | gsub(" Multichannel$"; "")
+               | gsub(" \\[[^]]*\\]$"; "") | gsub("\\s+$"; "");
+      def bracket: (capture("\\[(?<m>[^]]+)\\]$").m) // "";
+      def devsink($def):
+        .description as $d | (.properties // {}) as $p
+        | ($p["device.bus"] // "") as $bus
+        | ($d | test("HDMI|DisplayPort|\\bDP\\b"; "i")) as $hdmi
+        | ($d | test("Arctis|headset|headphone|Buds|AirPods|WH-"; "i")
+             or (($p["device.form_factor"] // "") | test("headset|headphone"))) as $head
+        | {
+            id: .index, name: .name, desc: $d,
+            friendly: (if ($d|test("Arctis Nova Elite")) then "Arctis Nova Elite"
+                       elif $hdmi then "Monitor speakers (HDMI)"
+                       else ($d|clean) end),
+            short: (if ($d|test("Arctis")) then "Arctis"
+                    elif $hdmi then "Monitor"
+                    else ($d|clean|split(" ")|.[0]) end),
+            sub: (if $hdmi then ("HDMI" + (if ($d|bracket) != "" then " · " + ($d|bracket) else "" end))
+                  elif $head then ((if $bus == "usb" then "USB " elif $bus == "bluetooth" then "Bluetooth " else "" end) + "headset")
+                  else ((if $bus == "usb" then "USB " elif $bus == "bluetooth" then "Bluetooth " else "" end) + "speakers") end),
+            icon: (if $head then "headphones" elif $hdmi then "tv" else "speaker" end),
+            volume: pct, muted: (.mute // false),
+            default: (.name == $def)
+          };
+      def devsource($def):
+        .description as $d | (.properties // {}) as $p
+        | ($p["device.bus"] // "") as $bus
+        | {
+            id: .index, name: .name, desc: $d,
+            friendly: (if ($d|test("USB PnP Audio")) then "USB mic"
+                       elif ($d|test("Arctis")) then "Arctis mic"
+                       elif ($d|test("webcam|C270|C310|C920|camera"; "i")) then "Webcam"
+                       else ($d|clean) end),
+            short: (if ($d|test("USB PnP Audio")) then "USB mic"
+                    elif ($d|test("Arctis")) then "Arctis"
+                    elif ($d|test("webcam|C270|C310|C920|camera"; "i")) then "Webcam"
+                    else ($d|clean|split(" ")|.[0]) end),
+            sub: (if ($d|test("Arctis|headset"; "i")) then "Headset microphone"
+                  elif ($d|test("webcam|C270|C310|C920|camera"; "i")) then (($d|clean) + " microphone")
+                  else ((if $bus == "usb" then "USB " elif $bus == "bluetooth" then "Bluetooth " else "" end) + "microphone") end),
+            icon: (if ($d|test("Arctis|headset"; "i")) then "headset_mic"
+                   elif ($d|test("webcam|camera|C270|C310|C920"; "i")) then "videocam"
+                   else "mic" end),
+            volume: pct, muted: (.mute // false),
+            default: (.name == $def)
+          };
+      def generic: test("^(AudioStream|playStream|recStream|audio stream|Playback|Playback Stream|Record Stream|Simple DirectMedia Layer|ALSA Playback|WEBRTC VoiceEngine|.*\\.(wav|ogg|oga))$"; "i");
+      def stream($kind):
+        (.properties // {}) as $p
+        | ($p["application.name"] // "") as $app
+        | ($p["media.name"] // "") as $media
+        | {
+            index: .index,
+            app: $app,
+            title: (if ($media == "" or $media == $app or ($media|generic)) then "" else $media end),
+            icon: ($icons[$app] // ""),
+            glyph: (if $kind == "rec" then "mic" else "music_note" end),
+            volume: pct, muted: (.mute // false),
+            corked: (.corked // false)
+          };
+      def hidden: (.properties // {}) as $p
+        | ($p["application.name"] // "") as $a
+        | ($p["application.process.binary"] // "") as $b
+        | ($a == "") or ($a|test("^(cava|PulseAudio Volume Control|pavucontrol|speech-dispatcher.*|libcanberra|EasyEffects|easyeffects)$"; "i"))
+          or ($b|test("^(cava|pavucontrol|easyeffects)$"));
+      ($info.default_sink_name // "") as $ds
+      | ($info.default_source_name // "") as $dsrc
+      | ($sinks | map({key: (.index|tostring), value: .name}) | from_entries) as $sinkname
+      | ($sources | map({key: (.index|tostring), value: .name}) | from_entries) as $srcname
+      | [ $sinks[] | devsink($ds) ] as $sinkdevs
+      | [ $sources[] | select(.name|endswith(".monitor")|not) | devsource($dsrc) ] as $srcdevs
+      | {
+          sinks: $sinkdevs,
+          sources: $srcdevs,
+          apps: ([ $inputs[] | select(hidden|not) | stream("play") + {sink: ($sinkname[(.sink|tostring)] // "")} ]
+                 | map(. as $a | . + ([$sinkdevs[] | select(.name == $a.sink)][0] // {} | {dev_short: (.short // "?"), dev_icon: (.icon // "speaker")}))
+                 | sort_by(.corked, (.app|ascii_downcase), .index)),
+          recs: ([ $outputs[] | select(hidden|not)
+                   | select(($srcname[(.source|tostring)] // "") != "")
+                   | stream("rec") + {source: ($srcname[(.source|tostring)] // "")} ]
+                 | map(. as $a | . + ([$srcdevs[] | select(.name == $a.source)][0] // {} | {dev_short: (.short // "?"), dev_icon: (.icon // "mic")}))
+                 | sort_by((.app|ascii_downcase), .index))
+        }
+      | if $mode == "levels" then
+          # flat {"sink60":{"v":23,"r":23,"m":false}, ...}; v capped at 100 (slider max),
+          # r = real level (may exceed 100) for the label. Capping v keeps GTK from
+          # clamping set_value and firing :onchange (which would write 100%).
+          ( [ (.sinks[]   | {key: "sink\(.id)",    value: {v: ([.volume, 100] | min), r: .volume, m: .muted}}),
+              (.sources[] | {key: "source\(.id)",  value: {v: ([.volume, 100] | min), r: .volume, m: .muted}}),
+              (.apps[]    | {key: "app\(.index)",  value: {v: ([.volume, 100] | min), r: .volume, m: .muted}}),
+              (.recs[]    | {key: "rec\(.index)",  value: {v: ([.volume, 100] | min), r: .volume, m: .muted}}) ] | from_entries )
+        elif $mode == "struct" then
+          # layout only: no volume/mute so for-loops are not rebuilt while dragging
+          .sinks |= map(del(.volume, .muted)) | .sources |= map(del(.volume, .muted))
+          | .apps |= map(del(.volume, .muted)) | .recs |= map(del(.volume, .muted))
+        else . end'
+}
+
+MODE=full
+ONCE=0
+for a in "$@"; do
+    case "$a" in
+        --once) ONCE=1 ;;
+        --levels) MODE=levels ;;
+        --struct) MODE=struct ;;
+    esac
+done
+if [ "$ONCE" == 1 ]; then
+    snapshot
+    exit 0
+fi
+
+last=""
+emit() {
+    local out
+    out=$(snapshot)
+    if [ -n "$out" ] && [ "$out" != "$last" ]; then
+        printf '%s\n' "$out"
+        last="$out"
+    fi
+}
+
+while true; do
+    emit
+    # Re-subscribe if the server goes away (pipewire restart etc.)
+    while read -r line; do
+        case "$line" in
+            *"on sink"*|*"on source"*|*"on sink-input"*|*"on source-output"*|*"on server"*|*"on card"*)
+                # debounce: swallow further events until 100 ms of silence
+                # (but never hold an update back for more than ~300 ms)
+                start=${EPOCHREALTIME/./}
+                while read -r -t 0.1 _; do
+                    (( ${EPOCHREALTIME/./} - start > 300000 )) && break
+                done
+                emit
+                ;;
+        esac
+    done < <(pactl subscribe 2>/dev/null)
+    sleep 1
+done

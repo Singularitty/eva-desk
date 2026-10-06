@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# audio-quick - state + actions for the sound settings panel's quick toggles.
+#   audio-quick              -> {"dnd":bool,"night":bool,"power":"balanced"}
+#   audio-quick dnd|night|power   -> toggle/cycle
+
+state() {
+    local dnd night power
+    dnd=$(dunstctl is-paused 2>/dev/null)
+    [ "$dnd" == "true" ] || dnd=false
+    if pgrep -x wlsunset >/dev/null 2>&1; then night=true; else night=false; fi
+    power=$(powerprofilesctl get 2>/dev/null)
+    [ -z "$power" ] && power="unknown"
+    printf '{"dnd":%s,"night":%s,"power":"%s"}\n' "$dnd" "$night" "$power"
+}
+
+case "$1" in
+    dnd)
+        dunstctl set-paused toggle
+        ;;
+    night)
+        if pgrep -x wlsunset >/dev/null 2>&1; then
+            pkill -x wlsunset
+        else
+            ~/.config/hypr/end4/hyprdispatch exec "wlsunset -l 52.4 -L 4.9 -t 4000 -T 6500" >/dev/null
+        fi
+        sleep 0.3
+        ;;
+    power)
+        case "$(powerprofilesctl get 2>/dev/null)" in
+            performance) next=balanced ;;
+            balanced) next=power-saver ;;
+            *) next=performance ;;
+        esac
+        powerprofilesctl set "$next"
+        ;;
+    *)
+        state
+        exit 0
+        ;;
+esac
