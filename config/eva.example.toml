@@ -93,9 +93,15 @@ alarm_band = true         # EMERGENCY band under the bar for critical notificati
 alarm_seconds = 120       # the band leaves by itself after this
 alttab = true             # Alt+Tab as the cast strip (release Alt to jump, Esc cancels)
 power = true              # the Third Impact power menu on Super+M (Enter twice for shutdown)
+frame = true              # the static hardware frame (brackets, tag, LOCK) around the focused window
 sound = true              # the sound panel: click VOL on the bar, or eva-ctl panel sound
 [overlays.names]          # workspace names on the eye-catch
 # 3 = "PROJECTS"
+
+[frame]                   # which pieces of the window frame draw
+brackets = true           # bone corner brackets 12 px outside the window
+tag = true                 # the app class and workspace number as a tag above the top-left corner
+lock = true                # the LOCK readout inset into the top edge, right side
 
 [power]                   # what the power menu runs
 lock = "hyprlock"
@@ -119,4 +125,4 @@ style = "card"                    # border style: card (lilac rule, purple drop)
 rounding = 0
 gaps_in = 4
 gaps_out = 8
-border_speed = 100                # tenths of a second per turn of the border gradient (max 100 = 10 s); 0 = still
+border_speed = 0                  # tenths of a second per turn of the border gradient (max 100 = 10 s); 0 = still

@@ -83,7 +83,7 @@ selected one gets a detail card on the right.
 **Bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
 workspace is urgent or the CPU is pegged it gets an orange warning strip (second row).
 
-**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile.
+**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile. This replaces the old eww `osettings` window, which is no longer needed.
 
 <p align="center"><img src="docs/eva-eyecatch.png" alt="the workspace card" width="100%"></p>
 
@@ -213,7 +213,8 @@ The sections you will probably touch:
 | `[figures]` | which workspaces get the figure, how much space it takes, the maximise backdrop, window classes to ignore (games) |
 | `[wallpapers]` | the pool, a fixed wallpaper per workspace, named workspaces, other monitors |
 | `[bar]` | height, number of tags, the readouts, now playing, tray, what clicks do, extra buttons |
-| `[overlays]` | the workspace card, the EMERGENCY band, Alt+Tab, the power menu, the pulses, the berserk threshold |
+| `[overlays]` | the workspace card, the EMERGENCY band, Alt+Tab, the power menu, the pulses, the berserk threshold, and switches for the window frame and the sound panel |
+| `[frame]` | which pieces of the window frame draw: the corner brackets, the app/workspace tag, the LOCK readout |
 | `[power]` | the commands behind lock / sleep / log out / reboot / shut down |
 | `[hyprland]` | the keybinds, gaps, border style and speed |
 
@@ -280,7 +281,8 @@ draws. If those look right, the problem is in Hyprland; if not, open an issue wi
 
 **Too much movement.** `[overlays]` has a switch for each motion. `eyecatch_style = "cut"` is a louder
 version of the workspace card, `"soft"` the default, `eyecatch = false` turns it off. `berserk = 0` stops the
-stage reacting to load.
+stage reacting to load. `frame = false` under `[overlays]` drops the brackets, tag and LOCK readout around
+the focused window entirely; `sound = false` drops the sound panel.
 
 **My game is on the figure's workspace.** Fullscreen games are ignored: the classes in
 `[figures] ignore_classes` never get a figure, an eye-catch or a pulse.
