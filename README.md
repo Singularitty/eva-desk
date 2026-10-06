@@ -104,7 +104,9 @@ And the rest, in short:
 
 - **Wallpapers**: one per workspace, shuffled from a pool of your own images. None are bundled; the show's
   artwork is easy to find (wallhaven's "evangelion" tag has ultrawide and portrait pieces).
-- **Windows**: square corners, a slowly rotating lilac border, a hard purple shadow.
+- **Windows**: square corners, a thin purple border, a hard purple shadow, bone corner brackets, the app name and
+  workspace number as a tag, and a LOCK readout on the focused window. The border gradient no longer rotates
+  (`border_speed = 100` under `[hyprland]` brings it back).
 - **Small things**: a critical notification shows a warning band under the bar. A new window gets one hexagon pulse.
   The clock digits slide at the minute. After thirty seconds of a maxed-out CPU the stage turns orange until
   it cools down.

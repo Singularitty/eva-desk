@@ -97,6 +97,7 @@ class App(Gtk.Application):
                 self.overlays["pulse"] = O.SpawnPulse(self, cfg)
         except Exception:
             traceback.print_exc()
+        self.frames = {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)
         self.hypr.listen(self._event)
@@ -127,10 +128,15 @@ class App(Gtk.Application):
                     addr = data.split(",")[0]
                     GLib.timeout_add(60, lambda: (self._spawn_pulse(addr), False)[1])
             self.schedule()
+            self._update_frames()
 
     def schedule(self, delay=25):
         if self.refresh_id is None:
             self.refresh_id = GLib.timeout_add(delay, self._run_refresh)
+
+    def _update_frames(self):
+        for f in getattr(self, "frames", {}).values():
+            f.update()
 
     def _run_refresh(self):
         self.refresh_id = None
@@ -215,12 +221,14 @@ class App(Gtk.Application):
         from .gtkutil import monitors
         gdk = monitors()
         want = {m["name"] for m in mains if m["name"] in gdk}
-        for name in list(set(self.stages) | set(self.bars)):
+        for name in list(set(self.stages) | set(self.bars) | set(self.frames)):
             if name not in want or self.gdk_of.get(name) is not gdk.get(name):
                 if name in self.stages:
                     self.stages.pop(name).destroy()
                 if name in self.bars:
                     self.bars.pop(name).destroy()
+                if name in self.frames:
+                    self.frames.pop(name).destroy()
                 self.prev.pop(name, None)
         for name in want:
             self.gdk_of[name] = gdk[name]
@@ -235,6 +243,9 @@ class App(Gtk.Application):
                          volume=self.volume_state[0], muted=self.volume_state[1], resources=self.res_state,
                          music=self.music_state, tray=self.tray.visible() if self.tray else [])
                 b.set_visible(True)
+            if name not in self.frames and self.cfg["overlays"]["frame"]:
+                from .frame import Frame
+                self.frames[name] = Frame(self, self.cfg, gdk[name], name)
 
     def refresh(self):
         cfg = self.cfg

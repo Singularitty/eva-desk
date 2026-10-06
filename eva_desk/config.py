@@ -87,6 +87,12 @@ DEFAULTS = {
         "minute_flip": True,      # the clock badge's digits slide at the minute
         "berserk": 90,            # CPU or RAM at or above this % for berserk_seconds turns the stage orange (0 = never)
         "berserk_seconds": 30,
+        "frame": True,            # the static hardware frame (brackets, tag, LOCK) around the focused window
+    },
+    "frame": {                    # the window frame's own pieces
+        "brackets": True,         # bone corner brackets 12 px outside the window
+        "tag": True,              # the app class and workspace number as a tag above the top-left corner
+        "lock": True,             # the LOCK readout inset into the top edge, right side
     },
     "power": {                    # what the power menu runs
         "lock": "hyprlock",
@@ -110,7 +116,7 @@ DEFAULTS = {
         "rounding": 0,
         "gaps_in": 4,
         "gaps_out": 8,
-        "border_speed": 100,      # tenths of a second per turn of the border gradient (max 100 = 10 s); 0 = still
+        "border_speed": 0,        # tenths of a second per turn of the border gradient (max 100 = 10 s); 0 = still
     },
 }
 

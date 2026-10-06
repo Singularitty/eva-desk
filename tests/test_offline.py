@@ -151,6 +151,55 @@ class Logic(unittest.TestCase):
         self.assertTrue(self.app.bars["DP-3"].visible)
         self.assertEqual(self.app.hypr.execs, ["eww open scratch", "eww close scratch"])
 
+    def test_frame_polls_floating(self):
+        from eva_desk import frame
+        f = frame.Frame.__new__(frame.Frame)
+        f.app, f.cfg, f.poll_id, f.geo = self.app, self.cfg, None, None
+        f.name = "DP-3"
+        f.queue = lambda: None
+        self.app.hypr.state = {"monitors": MONS, "activewindow": {"at": [100, 900], "size": [400, 300], "monitor": 0, "floating": True, "fullscreen": 0, "class": "mpv", "workspace": {"id": 1}}}
+        with mock.patch("eva_desk.frame.GLib.timeout_add", return_value=7) as ta:
+            f.update()
+        ta.assert_called_once()                      # floating: a 200 ms poll is armed
+        self.assertEqual(ta.call_args[0][0], 200)
+        self.app.hypr.state["activewindow"]["floating"] = False
+        with mock.patch("eva_desk.frame.GLib.source_remove") as sr:
+            f.update()
+        sr.assert_called_once_with(7)                # tiled again: the poll is dropped
+
+
+MONS = [{"id": 0, "name": "DP-3", "x": 0, "y": 746, "width": 3440, "height": 1440, "scale": 1},
+        {"id": 1, "name": "HDMI-A-1", "x": 3440, "y": 583, "width": 1920, "height": 1080, "scale": 1}]
+
+
+class FrameGeometry(unittest.TestCase):
+    def setUp(self):
+        from eva_desk import frame
+        self.frame, self.cfg = frame, config.load("/nonexistent")
+
+    def test_frame_geometry_main_monitor(self):
+        act = {"at": [12, 814], "size": [3416, 1360], "monitor": 0, "floating": False, "fullscreen": 0, "class": "kitty", "workspace": {"id": 4}}
+        self.assertEqual(self.frame.geometry(act, MONS, self.cfg),
+                         ("DP-3", {"x": 12, "y": 68, "w": 3416, "h": 1360, "cls": "kitty", "ws": 4, "floating": False}))
+
+    def test_frame_geometry_side_monitor(self):
+        act = {"at": [3450, 600], "size": [1900, 1040], "monitor": 1, "floating": True, "fullscreen": 0, "class": "firefox", "workspace": {"id": 7}}
+        name, geo = self.frame.geometry(act, MONS, self.cfg)
+        self.assertEqual((name, geo["x"], geo["y"], geo["floating"]), ("HDMI-A-1", 10, 17, True))
+
+    def test_frame_hidden_for_fullscreen_games_and_nothing(self):
+        act = {"at": [0, 0], "size": [1, 1], "monitor": 0, "floating": False, "fullscreen": 1, "class": "kitty", "workspace": {"id": 1}}
+        self.assertIsNone(self.frame.geometry(act, MONS, self.cfg))
+        self.assertIsNone(self.frame.geometry(dict(act, fullscreen=0, **{"class": "steam_app_42"}), MONS, self.cfg))
+        self.assertIsNone(self.frame.geometry({}, MONS, self.cfg))
+        self.assertIsNone(self.frame.geometry(dict(act, fullscreen=0, monitor=9), MONS, self.cfg))
+
+    def test_frame_draws_offline(self):
+        import cairo
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 500)
+        self.frame.draw_frame(cairo.Context(surf), {"x": 100, "y": 80, "w": 600, "h": 360, "cls": "kitty", "ws": 2, "floating": False}, self.cfg["frame"])
+        self.assertGreater(sum(surf.get_data()), 0)       # something was painted
+
 
 class Wallpapers(unittest.TestCase):
     def test_choice(self):

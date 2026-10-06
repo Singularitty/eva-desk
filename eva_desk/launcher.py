@@ -94,6 +94,8 @@ class Launcher:
         if self.blink_id is None:
             self.blink_id = GLib.timeout_add(530, self._blink)
         self._arm_idle()
+        if hasattr(self.app, "_update_frames"):
+            self.app._update_frames()
 
     def hide(self):
         self.win.set_visible(False)
@@ -103,6 +105,8 @@ class Launcher:
             if getattr(self, attr, None) is not None:
                 GLib.source_remove(getattr(self, attr))
                 setattr(self, attr, None)
+        if hasattr(self.app, "_update_frames"):
+            self.app._update_frames()
 
     def _arm_idle(self):
         """Safety: the launcher holds the keyboard while open, so it never stays open unattended."""

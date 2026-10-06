@@ -62,6 +62,9 @@ def render_all(cfg, out, w=3440, h=1440):
     save("power", w, h, lambda cr: O.draw_power(cr, w, h, 3, False, "9 WINDOWS OPEN · 2 EDITORS"))
     save("power_armed", w, h, lambda cr: O.draw_power(cr, w, h, 3, True, "9 WINDOWS OPEN · 2 EDITORS"))
 
+    from . import frame
+    save("frame", w, h, lambda cr: frame.draw_frame(cr, {"x": 300, "y": 160, "w": 1400, "h": 900, "cls": "kitty", "ws": 2, "floating": False}, cfg["frame"]))
+
     # bar
     from .bar import Bar
     bar = Bar.__new__(Bar)

@@ -248,11 +248,15 @@ class _Overlay:
         self.win.set_visible(True)
         self.win.present()
         self.view.queue_draw()
+        if hasattr(self.app, "_update_frames"):
+            self.app._update_frames()
 
     def hide(self):
         self._stop()
         self.win.set_visible(False)
         self.release()
+        if hasattr(self.app, "_update_frames"):
+            self.app._update_frames()
 
     def release(self):
         """Drop the full-screen textures: they are cheap to render again and expensive to keep."""
