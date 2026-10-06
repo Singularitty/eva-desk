@@ -3,6 +3,7 @@ scripts (tools/sources), wrapped so the daemon can read a snapshot, listen for l
 on the GLib main loop, and fire-and-forget volume/mute/default/move/quick-toggle writes.
 """
 import json
+import signal
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -140,7 +141,9 @@ class Listener:
         if self._cancellable is not None:
             self._cancellable.cancel()
         for proc in self._procs:
-            proc.force_exit()
+            # SIGTERM, not SIGKILL: audiostate traps it and takes its `pactl subscribe` child
+            # down with it (a SIGKILLed bash would leave that child until the next audio event)
+            proc.send_signal(signal.SIGTERM)
         self._procs = []
         self._streams = []
         self._cancellable = None

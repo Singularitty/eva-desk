@@ -83,7 +83,8 @@ selected one gets a detail card on the right.
 **Bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
 workspace is urgent or the CPU is pegged it gets an orange warning strip (second row).
 
-**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile. This replaces the old eww `osettings` window, which is no longer needed.
+**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile. While open it holds the keyboard; Esc or a click outside it closes it, and so does opening the launcher, the power menu or Alt+Tab. This replaces the old eww `osettings` window, which is no longer needed.
+Night light starts `wlsunset` with no location; to give it one (or any other `wlsunset` arguments), set `EVA_NIGHT_ARGS` in the daemon's environment, e.g. `env = EVA_NIGHT_ARGS,-l 39.9 -L 116.3` in your Hyprland config.
 
 <p align="center"><img src="docs/eva-eyecatch.png" alt="the workspace card" width="100%"></p>
 
@@ -165,6 +166,10 @@ Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GT
 
 Optional: `awww` or `swww` for wallpapers, `wpctl` for volume, `playerctl` for now playing, `grim` and
 `wl-copy` for screenshots, `hyprlock` for the lock screen, Pillow for rendering the lock and login backgrounds.
+The sound panel reads and sets audio with `pactl` (libpulse) and `gojq`, finds app icons with `geticons`;
+its quick toggles use `dunstctl` (dunst, do-not-disturb), `wlsunset` (night light) and `powerprofilesctl`
+(power-profiles-daemon). Without `pactl` or `gojq` the panel shows NO SIGNAL; a missing toggle tool only
+disables that toggle.
 The fonts (Shippori Mincho B1, Share Tech Mono, Rubik, Doto) are downloaded by the installer.
 
 ```sh

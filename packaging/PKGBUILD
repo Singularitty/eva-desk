@@ -18,7 +18,13 @@ optdepends=('awww: workspace wallpapers (or swww)'
             'python-scipy: the figure cutout tool (tools/gen)'
             'kitty: the kitty theme (eva-extras)'
             'starship: the prompt theme (eva-extras)'
-            'greetd-regreet: the login screen')
+            'greetd-regreet: the login screen'
+            'libpulse: audio state and controls in the sound panel (pactl)'
+            'gojq: audio state in the sound panel (AUR)'
+            'geticons: app icons in the sound panel (AUR)'
+            'dunst: the do-not-disturb toggle in the sound panel (dunstctl)'
+            'wlsunset: the night light toggle in the sound panel'
+            'power-profiles-daemon: the power profile toggle in the sound panel (powerprofilesctl)')
 makedepends=('git')
 install=eva-desk-git.install
 provides=('eva-desk')

@@ -1,5 +1,9 @@
 """Audio data source tests: no compositor, no windows. Run: python3 -m unittest discover -s tests"""
+import contextlib
+import io
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -20,7 +24,8 @@ class AudioSource(unittest.TestCase):
 
     def test_audio_source_missing_script(self):
         from eva_desk.sources import audio
-        with mock.patch.object(audio, "scripts_dir", return_value=Path("/nonexistent")):
+        out = io.StringIO()
+        with mock.patch.object(audio, "scripts_dir", return_value=Path("/nonexistent")), contextlib.redirect_stdout(out):
             self.assertIsNone(audio.snapshot())
             self.assertEqual(audio.quick(), {"dnd": False, "night": False, "power": "unknown"})
             audio.set_volume("sink", 60, 50)             # does not raise
@@ -28,6 +33,7 @@ class AudioSource(unittest.TestCase):
             audio.set_default("sink", "alsa_output.foo")  # does not raise
             audio.move("sink-input", 105, "alsa_output.bar")  # does not raise
             audio.quick_toggle("dnd")                      # does not raise
+        self.assertEqual(out.getvalue().count("eva-desk: audio: "), 5)   # each failed write is logged once
 
     def test_snapshot_reads_the_script(self):
         from eva_desk.sources import audio
@@ -57,8 +63,10 @@ class AudioSource(unittest.TestCase):
             fake = Path(tmp) / "audiostate"
             fake.write_text(f"#!/bin/sh\ncat {fx}\nexit 1\n")
             fake.chmod(0o755)
-            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
+            out = io.StringIO()
+            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)), contextlib.redirect_stdout(out):
                 self.assertIsNone(audio.snapshot())
+            self.assertIn("audiostate exited 1", out.getvalue())
 
     def test_quick_returns_default_on_nonzero_exit(self):
         from eva_desk.sources import audio
@@ -66,8 +74,10 @@ class AudioSource(unittest.TestCase):
             fake = Path(tmp) / "audio-quick"
             fake.write_text('#!/bin/sh\nprintf \'{"dnd":true,"night":false,"power":"balanced"}\\n\'\nexit 1\n')
             fake.chmod(0o755)
-            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)):
+            out = io.StringIO()
+            with mock.patch.object(audio, "scripts_dir", return_value=Path(tmp)), contextlib.redirect_stdout(out):
                 self.assertEqual(audio.quick(), {"dnd": False, "night": False, "power": "unknown"})
+            self.assertIn("audio-quick exited 1", out.getvalue())
 
     def test_write_commands_build_the_right_argv(self):
         from eva_desk.sources import audio
@@ -190,6 +200,107 @@ class AudioSource(unittest.TestCase):
                 loop.quit()
                 t.join(timeout=1)
         self.assertEqual(len(calls), frozen)             # the counter is frozen at stop() time
+
+
+def _alive(pid):
+    """True while `pid` runs (a zombie counts as gone: it no longer holds anything)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return False
+
+
+def _kill_leftovers(pidfile):
+    """Even when a test fails, never leave a fake `pactl subscribe` behind."""
+    try:
+        pids = [int(p) for p in pidfile.read_text().split()]
+    except (OSError, ValueError):
+        return
+    for pid in pids:
+        if _alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+class AudioStateScript(unittest.TestCase):
+    """The real tools/sources/audiostate against a fake `pactl` on PATH (no audio is touched)."""
+
+    def _fake_bin(self, tmp):
+        bin_dir = Path(tmp) / "bin"
+        bin_dir.mkdir()
+        pactl = bin_dir / "pactl"
+        pactl.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            f"  subscribe) echo $$ >> {tmp}/subscribe.pid; exec sleep 60 ;;\n"
+            "  --format=json) [ \"$2\" = info ] && echo '{}' || echo '[]' ;;\n"
+            "esac\n")
+        pactl.chmod(0o755)
+        return bin_dir
+
+    def test_listener_stop_leaves_no_subscribe_child(self):
+        from gi.repository import GLib
+        from eva_desk.sources import audio
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {"PATH": f"{self._fake_bin(tmp)}:{os.environ['PATH']}", "XDG_CACHE_HOME": tmp}
+            pidfile = Path(tmp) / "subscribe.pid"
+            loop = GLib.MainLoop()
+            t = threading.Thread(target=loop.run, daemon=True)
+            t.start()
+            try:
+                with mock.patch.dict(os.environ, env):
+                    listener = audio.Listener(lambda d: None, lambda d: None)
+                    listener.start()
+                    for _ in range(100):                     # wait until both scripts (struct, levels) subscribed
+                        if pidfile.exists() and len(pidfile.read_text().split()) == 2:
+                            break
+                        time.sleep(0.05)
+                    self.assertTrue(pidfile.exists(), "the fake pactl subscribe never started")
+                    pids = [int(p) for p in pidfile.read_text().split()]
+                    self.assertEqual(len(pids), 2)
+                    self.assertTrue(all(_alive(p) for p in pids))
+                    script_pids = [int(p.get_identifier()) for p in listener._procs]
+                    listener.stop()
+                    for _ in range(60):
+                        if not any(_alive(p) for p in pids + script_pids):
+                            break
+                        time.sleep(0.05)
+                    lingering = [p for p in pids + script_pids if _alive(p)]
+            finally:
+                loop.quit()
+                t.join(timeout=1)
+                _kill_leftovers(pidfile)
+            self.assertEqual(lingering, [], "pactl subscribe or audiostate outlived the listener")
+
+    def test_sigterm_takes_the_subscribe_child_down(self):
+        script = Path(__file__).resolve().parent.parent / "tools" / "sources" / "audiostate"
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, PATH=f"{self._fake_bin(tmp)}:{os.environ['PATH']}", XDG_CACHE_HOME=tmp)
+            pidfile = Path(tmp) / "subscribe.pid"
+            proc = subprocess.Popen([str(script), "--levels"], env=env, stdout=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    if pidfile.exists():
+                        break
+                    time.sleep(0.05)
+                time.sleep(0.2)
+                sub = int(pidfile.read_text().split()[0])
+                self.assertTrue(_alive(sub))
+                proc.send_signal(signal.SIGTERM)
+                self.assertEqual(proc.wait(timeout=5), 143)
+                for _ in range(40):
+                    if not _alive(sub):
+                        break
+                    time.sleep(0.05)
+                self.assertFalse(_alive(sub), "pactl subscribe outlived audiostate")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                _kill_leftovers(pidfile)
 
 
 if __name__ == "__main__":

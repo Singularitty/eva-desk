@@ -21,7 +21,9 @@ case "$1" in
         if pgrep -x wlsunset >/dev/null 2>&1; then
             pkill -x wlsunset
         else
-            ~/.config/hypr/end4/hyprdispatch exec "wlsunset -l 52.4 -L 4.9 -t 4000 -T 6500" >/dev/null
+            # no location by default; EVA_NIGHT_ARGS adds wlsunset arguments (e.g. "-l LAT -L LON")
+            # shellcheck disable=SC2086
+            setsid -f wlsunset -t 4000 -T 6500 ${EVA_NIGHT_ARGS:-} >/dev/null 2>&1
         fi
         sleep 0.3
         ;;

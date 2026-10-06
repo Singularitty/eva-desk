@@ -11,6 +11,13 @@
 #   --once    print one snapshot and exit (default: listen forever)
 
 export LC_ALL=C
+
+# On exit (SIGTERM from the daemon's Listener.stop() included) take the `pactl subscribe`
+# child down too, or it lingers until the next audio event finds its pipe closed.
+SUB_PID=""
+cleanup() { if [ -n "$SUB_PID" ]; then kill "$SUB_PID" 2>/dev/null; fi; return 0; }
+trap cleanup EXIT
+trap 'exit 143' TERM INT HUP
 ICON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/eww/audio-icons"
 mkdir -p "$ICON_CACHE" 2>/dev/null
 
@@ -196,18 +203,23 @@ emit() {
 while true; do
     emit
     # Re-subscribe if the server goes away (pipewire restart etc.)
-    while read -r line; do
+    exec 3< <(exec pactl subscribe 2>/dev/null)
+    SUB_PID=$!
+    while read -r line <&3; do
         case "$line" in
             *"on sink"*|*"on source"*|*"on sink-input"*|*"on source-output"*|*"on server"*|*"on card"*)
                 # debounce: swallow further events until 100 ms of silence
                 # (but never hold an update back for more than ~300 ms)
                 start=${EPOCHREALTIME/./}
-                while read -r -t 0.1 _; do
+                while read -r -t 0.1 _ <&3; do
                     (( ${EPOCHREALTIME/./} - start > 300000 )) && break
                 done
                 emit
                 ;;
         esac
-    done < <(pactl subscribe 2>/dev/null)
+    done
+    exec 3<&-
+    cleanup
+    SUB_PID=""
     sleep 1
 done
