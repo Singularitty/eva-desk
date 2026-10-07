@@ -199,6 +199,17 @@ class Logic(unittest.TestCase):
             self.app._sync_frames({"DP-3": other})
             self.assertEqual(self.app.frames, {})
 
+    def test_bar_keeps_the_app_it_dispatches_to(self):
+        # the live click path is self.app.command(...); a Bar built the real way must have that attribute
+        from eva_desk import bar as B
+        with mock.patch.object(B, "layer_window", lambda *a, **k: mock.MagicMock()), \
+             mock.patch.object(B.Gtk, "DrawingArea", mock.MagicMock), \
+             mock.patch.object(B.Gtk, "GestureClick", mock.MagicMock), \
+             mock.patch.object(B.Gtk, "EventControllerScroll", mock.MagicMock()), \
+             mock.patch.object(B.Gtk, "EventControllerMotion", mock.MagicMock):
+            b = B.Bar(self.app, None, "DP-3", self.cfg, self.app.hypr)
+        self.assertIs(b.app, self.app)
+
     def test_bar_volume_clicks(self):
         from eva_desk import bar as B
         b = B.Bar.__new__(B.Bar)

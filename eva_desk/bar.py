@@ -15,7 +15,7 @@ from .gtkutil import layer_window
 
 class Bar:
     def __init__(self, app, gdk_monitor, connector, cfg, hypr):
-        self.cfg, self.hypr, self.connector = cfg, hypr, connector
+        self.app, self.cfg, self.hypr, self.connector = app, cfg, hypr, connector
         self.tray = getattr(app, "tray", None)
         self.h = int(cfg["bar"]["height"])
         self.win = layer_window(app, gdk_monitor, "top", "eva-bar", anchors=("top", "left", "right"),
