@@ -14,6 +14,8 @@ House rule: nothing flashes, nothing changes colour on a beat. Bars move, that's
 """
 from .. import draw as d
 from ..sources import audio
+import cairo
+
 from . import widgets as W
 
 # (key, kanji title, english tag, what an empty list says)
@@ -424,6 +426,19 @@ def draw_sound(cr, x, y, w, h, model, no_signal):
     return hits, sections
 
 
+def content_height(model, no_signal=False):
+    """The height `draw_sound` needs to show `model` without shrinking anything: the four list
+    screens, the quick screen, and the gaps between them (a drop-down sizes itself from this)."""
+    if no_signal:
+        return 160
+    cr = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 8, 8))
+    extra = _screen_extra(cr)
+    picking = model.picker is not None and bool(model.targets())
+    needs = [extra + max(1, len(model.sections[s]["rows"])) * ROW_H + (PICK_H if picking and model.sel[0] == s else 0)
+             for s in range(4)]
+    return sum(needs) + extra + QUICK_CONTENT + 4 * GAP
+
+
 # ---------------------------------------------------------------- the panel
 KEYS = {"Up": "up", "k": "up", "Down": "down", "j": "down", "Left": "left", "h": "left", "Right": "right",
         "l": "right", "m": "mute", "d": "default", "Tab": "next_section", "ISO_Left_Tab": "prev_section",
@@ -437,26 +452,28 @@ class SoundControls:
     name = "sound"
 
     def __init__(self, app, cfg):
-        super().__init__(app, cfg, self.name, 1100, 1300, "left")
+        super().__init__(app, cfg, self.name, 640, 600, "top")
         self.model = SoundModel(None, audio.DEFAULT_QUICK)
         self.no_signal = True
         self.listener = None
 
     def place(self, gdk_monitor):
-        """Size from the monitor: min(1100, 34% of its width) wide, the height under the bar
-        less the panel's top and bottom margins."""
+        """A drop-down under the VOL tag: min(640, 30% of the monitor) wide, as tall as its
+        content (capped under the bar less the margins)."""
         if gdk_monitor is not None:
             geo = gdk_monitor.get_geometry()
             bar_h = int(self.cfg["bar"]["height"]) if self.cfg["bar"]["enabled"] else 0
-            self.pwidth = min(1100, int(0.34 * geo.width))
-            self.pheight = max(200, geo.height - bar_h - 2 * self.MARGIN)
+            self.pwidth = min(640, int(0.30 * geo.width))
+            self.pheight = max(160, min(content_height(self.model, self.no_signal), geo.height - bar_h - 2 * self.MARGIN))
         super().place(gdk_monitor)
 
     # ---------------------------------------------------------------- open / close / live state
-    def on_open(self):
-        state = audio.snapshot()
+    def prepare(self):
+        state = audio.snapshot()                         # before placement: the height follows the content
         self.no_signal = state is None
         self.model = SoundModel(state, audio.quick())
+
+    def on_open(self):
         self.listener = audio.Listener(self._on_struct, self._on_levels)
         self.listener.start()
 

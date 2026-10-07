@@ -104,14 +104,16 @@ class Logic(unittest.TestCase):
         calls = []
         class P:
             name = "sound"
-            def toggle(self, gdk): calls.append(("toggle", gdk)); return "ok"
+            def toggle(self, gdk, at=None): calls.append(("toggle", gdk) if at is None else ("toggle", gdk, at)); return "ok"
             def close(self): calls.append("close")
         self.app.panels, self.app.launcher, self.app.overlays = {"sound": P()}, None, {}
         self.app.focused_gdk = lambda: None
         self.assertEqual(self.app.command("panel sound"), "ok")
+        self.assertEqual(self.app.command("panel sound at 3300"), "ok")
+        self.assertEqual(self.app.command("panel sound at x"), "panel: bad position")
         self.assertEqual(self.app.command("panel close"), "ok")
         self.assertEqual(self.app.command("panel music"), "music disabled")
-        self.assertEqual(calls, [("toggle", None), "close"])
+        self.assertEqual(calls, [("toggle", None), ("toggle", None, 3300.0), "close"])
 
     def _live_panel(self):
         """A real Panel (no GTK: built with `__new__`) registered in the app, already open."""
@@ -222,7 +224,7 @@ class Logic(unittest.TestCase):
         with mock.patch.object(B, "_run") as run:
             gesture.get_current_button.return_value = 1
             b._click(gesture, 1, 10, 5)
-            self.assertEqual(calls, ["panel sound"])              # straight into the daemon, no shell
+            self.assertEqual(calls, ["panel sound at 50"])        # straight into the daemon, hanging under the tag
             run.assert_not_called()
             gesture.get_current_button.return_value = 2
             b._click(gesture, 1, 10, 5)

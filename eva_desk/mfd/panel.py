@@ -19,17 +19,21 @@ from ..gtkutil import rect, render_texture, texture  # noqa: E402
 from . import widgets as W  # noqa: E402
 
 
-def panel_rect(anchor, mw, mh, pw, ph, bar_h, margin=12):
+def panel_rect(anchor, mw, mh, pw, ph, bar_h, margin=12, at=None):
     """The panel's (x, y, w, h) in surface pixels for `anchor` within a `mw`x`mh` monitor, with
     `bar_h` kept free at the top. `left`/`right`/`bottom` sit flush at `margin` from their edge;
-    `top` centres horizontally (flush under the bar); `center` centres in both axes below the bar."""
+    `top` centres horizontally (flush under the bar), or, with `at` (an x on the bar, e.g. the
+    right edge of the tag that was clicked), hangs under it like a drop-down with its right edge
+    at `at`, kept inside the margins; `center` centres in both axes below the bar."""
     top_y = bar_h + margin
     if anchor == "left":
         return margin, top_y, pw, ph
     if anchor == "right":
         return mw - margin - pw, top_y, pw, ph
     if anchor == "top":
-        return (mw - pw) // 2, top_y, pw, ph
+        if at is None:
+            return (mw - pw) // 2, top_y, pw, ph
+        return int(max(margin, min(mw - margin - pw, at - pw))), top_y, pw, ph
     if anchor == "bottom":
         return margin, mh - margin - ph, pw, ph
     if anchor == "center":
@@ -53,6 +57,7 @@ class Panel(O._Overlay):
     def __init__(self, app, cfg, name, width, height, anchor):
         super().__init__(app, f"eva-panel-{name}", keyboard="exclusive", passthrough=False)
         self.cfg, self.anchor, self.name = cfg, anchor, name
+        self.at = None                                   # an x on the bar to hang under, set by open()
         self.pwidth, self.pheight = width, height
         self.px = self.py = self.pw = self.ph = 0
         self.sections, self.hits = [], []
@@ -84,8 +89,9 @@ class Panel(O._Overlay):
             return
         bar_h = int(self.cfg["bar"]["height"]) * self.scale if self.cfg["bar"]["enabled"] else 0
         margin = self.MARGIN * self.scale
+        at = self.at * self.scale if self.at is not None else None
         self.px, self.py, self.pw, self.ph = panel_rect(
-            self.anchor, self.w, self.h, self.pwidth * self.scale, self.pheight * self.scale, bar_h, margin)
+            self.anchor, self.w, self.h, self.pwidth * self.scale, self.pheight * self.scale, bar_h, margin, at)
         self._set_region()
 
     def show(self):
@@ -108,7 +114,12 @@ class Panel(O._Overlay):
         self._base_tex = None
 
     # ------------------------------------------------------------ open / close / toggle
-    def open(self, gdk_monitor):
+    def prepare(self):
+        """Subclass hook, before placement: load what the size depends on (nothing by default)."""
+
+    def open(self, gdk_monitor, at=None):
+        self.at = at                                     # an x on the bar to hang under (top anchor), or None
+        self.prepare()
         self.place(gdk_monitor)
         if not self.pw:
             return "no monitor"                          # nowhere to paint: never hold the keyboard blind
@@ -154,11 +165,11 @@ class Panel(O._Overlay):
         self.on_close()
         self.hide()
 
-    def toggle(self, gdk_monitor):
+    def toggle(self, gdk_monitor, at=None):
         if self.visible:
             self.close()
         else:
-            self.open(gdk_monitor)
+            self.open(gdk_monitor, at)
         return "ok"
 
     # ------------------------------------------------------------ subclass hooks

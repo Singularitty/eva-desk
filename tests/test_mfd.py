@@ -145,6 +145,26 @@ def FakeApp():
 
 
 class PanelBase(unittest.TestCase):
+    def test_panel_rect_top_hangs_under_a_bar_x(self):
+        from eva_desk.mfd import panel
+        # right edge at the tag's right edge, kept inside the margins
+        self.assertEqual(panel.panel_rect("top", 3440, 1440, 640, 500, 56, 12, at=3300), (2660, 68, 640, 500))
+        self.assertEqual(panel.panel_rect("top", 3440, 1440, 640, 500, 56, 12, at=3435), (3440 - 12 - 640, 68, 640, 500))
+        self.assertEqual(panel.panel_rect("top", 3440, 1440, 640, 500, 56, 12, at=100), (12, 68, 640, 500))
+        self.assertEqual(panel.panel_rect("top", 3440, 1440, 640, 500, 56, 12), ((3440 - 640) // 2, 68, 640, 500))
+
+    def test_sound_panel_height_follows_its_content(self):
+        import json
+        from eva_desk.mfd import sound
+        state = json.loads((Path(__file__).parent / "fixtures" / "audiostate.json").read_text())
+        m = sound.SoundModel(state, {"dnd": False, "night": False, "power": "balanced"})
+        h = sound.content_height(m)
+        self.assertGreater(h, 8 * sound.ROW_H)                       # 8 rows of the fixture, plus the screens' chrome
+        self.assertLess(h, 1300)                                      # well under the old full-height panel
+        state["apps"] = state["apps"][:1]
+        self.assertEqual(sound.content_height(m) - sound.content_height(sound.SoundModel(state, m.quick)), 2 * sound.ROW_H)
+        self.assertEqual(sound.content_height(m, no_signal=True), 160)
+
     def test_panel_rect_anchors(self):
         from eva_desk.mfd import panel
         cfg = config.load("/nonexistent")
@@ -220,6 +240,7 @@ def live_panel(app=None, w=3440, h=1440, name="sound"):
     p.app.panels[name] = p
     p.cfg = config.load("/nonexistent")
     p.name, p.anchor, p.pwidth, p.pheight = name, "left", 1100, 1300
+    p.at = None
     p.w, p.h, p.scale = w, h, 1
     p.px = p.py = p.pw = p.ph = 0
     p.win = FakeWin(False)

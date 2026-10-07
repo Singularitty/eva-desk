@@ -258,7 +258,7 @@ class Bar:
             if button == 2:
                 _run("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
             elif button == 1 and self.cfg["bar"]["actions"].get("volume"):
-                self.dispatch(self.cfg["bar"]["actions"]["volume"])
+                self.dispatch(self.cfg["bar"]["actions"]["volume"], at=self._tag_right(what))
         elif self._button(what[0]):
             btn = self._button(what[0])
             cmd = btn.get("right_action") if button == 3 else btn.get("middle_action") if button == 2 else btn.get("action")
@@ -271,11 +271,19 @@ class Bar:
             if cmd:
                 self.dispatch(cmd)
 
-    def dispatch(self, cmd):
-        """A bar action: `eva-ctl ...` goes straight to the daemon (no shell, no PATH), anything else to a shell."""
+    def _tag_right(self, what):
+        """The right edge (bar x, logical px) of the tag `what` was hit on; a panel hangs under it."""
+        return next((x1 for x0, x1, w in self.hits if w == what), None)
+
+    def dispatch(self, cmd, at=None):
+        """A bar action: `eva-ctl ...` goes straight to the daemon (no shell, no PATH), anything else to a
+        shell. `at` is where on the bar the click landed; a `panel` command gets it, so the panel can hang there."""
         line = cmd.strip()
         if line.split()[:1] == ["eva-ctl"]:
-            self.app.command(line[len("eva-ctl"):].strip())
+            inner = line[len("eva-ctl"):].strip()
+            if at is not None and inner.split()[:1] == ["panel"] and inner.split()[1:2] != ["close"]:
+                inner += f" at {int(at)}"
+            self.app.command(inner)
         else:
             _run(line)
 

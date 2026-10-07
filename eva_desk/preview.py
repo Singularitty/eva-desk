@@ -79,8 +79,11 @@ def render_all(cfg, out, w=3440, h=1440):
     if fixture_path.exists():
         fixture = json.loads(fixture_path.read_text())
         quick = {"dnd": False, "night": True, "power": "balanced"}
-        save("sound", 1100, 1300, lambda cr: draw_sound(cr, 0, 0, 1100, 1300, SoundModel(fixture, quick), False))
-        save("sound_no_signal", 1100, 1300, lambda cr: draw_sound(cr, 0, 0, 1100, 1300, SoundModel(None, quick), True))
+        from .mfd.sound import content_height
+        model = SoundModel(fixture, quick)
+        sh = content_height(model)                                  # the drop-down is as tall as its content
+        save("sound", 640, sh, lambda cr: draw_sound(cr, 0, 0, 640, sh, model, False))
+        save("sound_no_signal", 640, 160, lambda cr: draw_sound(cr, 0, 0, 640, 160, SoundModel(None, quick), True))
     else:
         print("sound: skipped (no tests/fixtures/audiostate.json in this copy)")
 

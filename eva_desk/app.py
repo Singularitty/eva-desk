@@ -482,8 +482,14 @@ class App(Gtk.Application):
             p = self.panels.get(name)
             if not p:
                 return f"{name} disabled"
+            at = None
+            if len(args) >= 3 and args[1] == "at":
+                try:
+                    at = float(args[2])                  # "panel sound at 3300": hang under that x on the bar
+                except ValueError:
+                    return "panel: bad position"
             try:
-                return p.toggle(self.focused_gdk())
+                return p.toggle(self.focused_gdk(), at)
             except Exception:
                 traceback.print_exc()
                 return "panel failed (see the log)"
