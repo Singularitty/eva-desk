@@ -611,5 +611,33 @@ class SoundRouting(unittest.TestCase):
         self.calls["quick_toggle"].assert_called_once_with("dnd")
 
 
+class LevelColour(unittest.TestCase):
+    def test_green_below_hot_orange_near_full_and_over(self):
+        from eva_desk import draw as d
+        from eva_desk.mfd import sound
+        self.assertIs(sound.level_colour(0.0), d.GOLD)
+        self.assertIs(sound.level_colour(0.68), d.GOLD)
+        self.assertIs(sound.level_colour(0.89), d.GOLD)
+        self.assertIs(sound.level_colour(0.9), d.LED)
+        self.assertIs(sound.level_colour(1.0), d.LED)
+        self.assertIs(sound.level_colour(1.5), d.LED)
+
+    def test_rows_carry_the_level_colour(self):
+        import cairo, json
+        from eva_desk import draw as d
+        from eva_desk.mfd import sound, widgets
+        state = json.loads((Path(__file__).parent / "fixtures" / "audiostate.json").read_text())
+        m = sound.SoundModel(state, {"dnd": False, "night": False, "power": "balanced"})
+        seen = []
+        orig = widgets.rows
+        def spy(cr, x, y, w, items, selected, row_h=34):
+            seen.extend(items); return orig(cr, x, y, w, items, selected, row_h=row_h)
+        with mock.patch.object(sound.W, "rows", spy):
+            sound.draw_sound(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 1100, 1300)), 0, 0, 1100, 1300, m, False)
+        self.assertTrue(seen)
+        for it in seen:
+            self.assertIs(it["colour"], d.LED if it["value"] >= sound.HOT_LEVEL else d.GOLD)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -16,14 +16,20 @@ from .. import draw as d
 from ..sources import audio
 from . import widgets as W
 
-# (key, kanji title, english tag, the level-bar colour role, what an empty list says)
+# (key, kanji title, english tag, what an empty list says)
 SECTIONS = (
-    ("sinks", "出力", "OUTPUT · SINKS", "claret", "NO OUTPUTS"),
-    ("sources", "入力", "INPUT · SOURCES", "ink5", "NO INPUTS"),
-    ("apps", "配信", "STREAMS · APPS", "claret", "NO STREAMS"),
-    ("recs", "収録", "RECORDING · RECS", "ink5", "NOTHING RECORDING"),
-    ("quick", "切替", "QUICK · TOGGLES", None, ""),
+    ("sinks", "出力", "OUTPUT · SINKS", "NO OUTPUTS"),
+    ("sources", "入力", "INPUT · SOURCES", "NO INPUTS"),
+    ("apps", "配信", "STREAMS · APPS", "NO STREAMS"),
+    ("recs", "収録", "RECORDING · RECS", "NOTHING RECORDING"),
+    ("quick", "切替", "QUICK · TOGGLES", ""),
 )
+HOT_LEVEL = 0.9          # from here up the bar turns orange: near or over full volume
+
+
+def level_colour(value):
+    """The level bar's colour: green, orange when near 100 or over. Set by the level, never by time."""
+    return d.LED if value >= HOT_LEVEL else d.GOLD
 KIND = {"sinks": "sink", "sources": "source", "apps": "sink-input", "recs": "source-output"}
 LEVEL_KEY = {"sinks": "sink", "sources": "source", "apps": "app", "recs": "rec"}
 QUICK = (("dnd", "DO NOT DISTURB", "DND"), ("night", "NIGHT LIGHT", "NIGHT"), ("power", "POWER", "POWER"))
@@ -56,7 +62,7 @@ class SoundModel:
         self.quick = {"dnd": False, "night": False, "power": "unknown", **(quick or {})}
         self.sections = []
         self.reported = set()           # (kind, id) of rows whose volume the state carried
-        for key, title, eng, _, _ in SECTIONS:
+        for key, title, eng, _ in SECTIONS:
             if key == "quick":
                 rows = [self._quick_row(k, label) for k, label, _ in QUICK]
             else:
@@ -273,7 +279,7 @@ def _picker_keys(cr, model):
 
 
 def _list_screen(cr, x, y, w, h, s, model):
-    _, title, eng, colour_role, empty = SECTIONS[s]
+    _, title, eng, empty = SECTIONS[s]
     sec = model.sections[s]
     active = model.sel[0] == s
     cx, cy, cw, ch = W.screen(cr, x, y, w, h, f"{title} · {eng}", hot="· ACTIVE" if active else "")
@@ -282,7 +288,6 @@ def _list_screen(cr, x, y, w, h, s, model):
     if not rows:
         d.draw_text(cr, d.layout(cr, empty, d.F_META, 12, spacing=2), cx + 12, cy + 10, d.col("dim"))
         return hits
-    colour = d.CLARET if colour_role == "claret" else d.col(colour_role)
     picking = active and model.picker is not None and model.targets()
     pick_h = PICK_H if picking else 0
     visible = max(1, int((ch - pick_h + 0.5) // ROW_H))      # +0.5: a content-sized screen fits exactly
@@ -290,7 +295,7 @@ def _list_screen(cr, x, y, w, h, s, model):
     start = max(0, sel_r - visible + 1) if active else 0
     shown = rows[start:start + visible]
     items = [{"label": r["label"], "sub": _display_sub(r), "value": r["value"], "peak": None,
-              "muted": r["muted"], "colour": colour} for r in shown]
+              "muted": r["muted"], "colour": level_colour(r["value"])} for r in shown]
 
     def put(chunk, first, top):
         for x0, y0, x1, y1, what in W.rows(cr, cx, top, cw, chunk, sel_r - start - first, row_h=ROW_H):
@@ -317,7 +322,7 @@ def _list_screen(cr, x, y, w, h, s, model):
 
 
 def _quick_screen(cr, x, y, w, h, model):
-    _, title, eng, _, _ = SECTIONS[4]
+    _, title, eng, _ = SECTIONS[4]
     active = model.sel[0] == 4
     cx, cy, cw, ch = W.screen(cr, x, y, w, h, f"{title} · {eng}", hot="· ACTIVE" if active else "")
     hits = []
