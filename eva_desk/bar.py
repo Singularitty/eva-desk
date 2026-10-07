@@ -1,7 +1,9 @@
 """The top bar (board AE1): skewed workspace tags + window title on the left, clock badge in the
 centre, tray icons, now-playing, resource tags (CPU / RAM / network), date / volume / custom buttons / star on the right."""
+import os
 import subprocess
 import time
+from pathlib import Path
 
 from . import gtkutil  # noqa: F401  (pins GTK 4 before any gi.repository import)
 
@@ -256,18 +258,26 @@ class Bar:
             if button == 2:
                 _run("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
             elif button == 1 and self.cfg["bar"]["actions"].get("volume"):
-                _run(self.cfg["bar"]["actions"]["volume"])
+                self.dispatch(self.cfg["bar"]["actions"]["volume"])
         elif self._button(what[0]):
             btn = self._button(what[0])
             cmd = btn.get("right_action") if button == 3 else btn.get("middle_action") if button == 2 else btn.get("action")
             if cmd:
-                _run(cmd)
+                self.dispatch(cmd)
         elif what[0] == "music" and button == 2:
             _run(f"playerctl -p {self.cfg['bar']['music_players']} play-pause")
         else:
             cmd = self.cfg["bar"]["actions"].get(what[0], "")
             if cmd:
-                _run(cmd)
+                self.dispatch(cmd)
+
+    def dispatch(self, cmd):
+        """A bar action: `eva-ctl ...` goes straight to the daemon (no shell, no PATH), anything else to a shell."""
+        line = cmd.strip()
+        if line.split()[:1] == ["eva-ctl"]:
+            self.app.command(line[len("eva-ctl"):].strip())
+        else:
+            _run(line)
 
     def _button(self, name):
         return next((b for b in self.cfg["bar"].get("buttons", []) if b.get("name") == name), None)
@@ -320,4 +330,8 @@ def music_tags(music):
 
 
 def _run(cmd):
-    subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # the daemon is started by Hyprland with a PATH that may lack ~/.local/bin and the daemon's own bin dir
+    env = dict(os.environ)
+    extra = [str(Path(__file__).resolve().parents[1] / "bin"), str(Path.home() / ".local" / "bin")]
+    env["PATH"] = ":".join(extra + [env.get("PATH", "")])
+    subprocess.Popen(cmd, shell=True, start_new_session=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

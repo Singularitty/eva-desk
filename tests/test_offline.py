@@ -205,17 +205,20 @@ class Logic(unittest.TestCase):
         b.cfg = self.cfg
         b.hits = [(0, 50, ("volume",))]
         b.tray = None
+        calls = []
+        b.app = mock.Mock(command=lambda line: calls.append(line) or "ok")
         gesture = mock.Mock()
         with mock.patch.object(B, "_run") as run:
             gesture.get_current_button.return_value = 1
             b._click(gesture, 1, 10, 5)
-            run.assert_called_once_with("eva-ctl panel sound")
+            self.assertEqual(calls, ["panel sound"])              # straight into the daemon, no shell
+            run.assert_not_called()
             gesture.get_current_button.return_value = 2
             b._click(gesture, 1, 10, 5)
             run.assert_called_with("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
             gesture.get_current_button.return_value = 3
             b._click(gesture, 1, 10, 5)
-            self.assertEqual(run.call_count, 2)                           # right click does nothing
+            self.assertEqual(run.call_count, 1)                           # right click does nothing
         self.assertTrue(self.cfg["overlays"]["sound"])
 
     def test_figure_everywhere_and_toggle(self):
@@ -243,6 +246,27 @@ class Logic(unittest.TestCase):
         self.assertEqual(self.step(4, [win(4), win(4, addr="0x2")]), ("figure", True, False))   # undocked: back in
         self.assertEqual(self.step(4, [side]), (None, False, False))                   # only the side window
         self.assertEqual(self.step(4, [win(4, fs=1), side]), ("herald", False, True))  # maximise still heralds
+
+    def test_bar_dispatches_eva_ctl_actions_in_process(self):
+        from eva_desk import bar as B
+        calls, runs = [], []
+        self.app.command = lambda line: calls.append(line) or "ok"
+        b = B.Bar.__new__(B.Bar)
+        b.app, b.cfg = self.app, self.cfg
+        with mock.patch.object(B, "_run", lambda cmd: runs.append(cmd)):
+            b.dispatch("eva-ctl panel sound")
+            b.dispatch("  eva-ctl figure toggle ")
+            b.dispatch("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+        self.assertEqual(calls, ["panel sound", "figure toggle"])
+        self.assertEqual(runs, ["wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"])
+
+    def test_run_puts_the_daemon_bin_dirs_on_path(self):
+        from eva_desk import bar as B
+        seen = {}
+        with mock.patch.object(B.subprocess, "Popen", lambda *a, **k: seen.update(k)):
+            B._run("true")
+        self.assertTrue(seen["env"]["PATH"].startswith(str(Path(B.__file__).resolve().parents[1] / "bin") + ":"))
+        self.assertIn(str(Path.home() / ".local" / "bin"), seen["env"]["PATH"])
 
     def test_bar_tags_and_title(self):
         self.step(2, [win(1), win(2)])
