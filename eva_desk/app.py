@@ -306,7 +306,8 @@ class App(Gtk.Application):
             else:
                 scene = None
             prev = self.prev.get(name, {})
-            same_ws = prev.get("ws") == wid
+            reshuffle = bool(prev.get("reshuffle"))          # the shuffle timer: new wallpaper, same workspace
+            same_ws = prev.get("ws") == wid or reshuffle
             impact = (scene == "figure" and same_ws and prev.get("scene") != scene
                       and (prev.get("count", 0) == 0 or prev.get("side") or getattr(self, "pending_impact", False)))
             herald_fresh = scene == "herald" and same_ws and prev.get("scene") != "herald"
@@ -315,9 +316,9 @@ class App(Gtk.Application):
                 if not same_ws and figure:
                     stage.prepare(figure)
                 stage.show(scene, impact=impact, herald_fresh=herald_fresh)
+            if (not same_ws or reshuffle) and self.walls:
+                self.walls.set_for(name, wid, wname)
             if not same_ws:
-                if self.walls:
-                    self.walls.set_for(name, wid, wname)
                 self._hooks(prev.get("ws_name"), wname)
                 eye = getattr(self, "overlays", {}).get("eyecatch")
                 if (eye and prev and isinstance(wid, int) and wid > 0 and not game and m.get("focused")
@@ -421,7 +422,7 @@ class App(Gtk.Application):
     def _reshuffle(self):
         if self.walls:
             self.walls.shuffle()
-            self.prev = {k: {**v, "ws": None} for k, v in self.prev.items()}   # re-apply wallpapers
+            self.prev = {k: {**v, "reshuffle": True} for k, v in self.prev.items()}   # re-apply wallpapers, no eye-catch
             self.schedule(0)
         return True
 
