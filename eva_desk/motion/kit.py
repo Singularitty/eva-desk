@@ -1,0 +1,294 @@
+"""The drawing kit of the motion pieces: shapes, type, clips and transforms over one GTK snapshot.
+
+A piece works in design px. The kit scales them so that a frame is 720 high on anything as wide as 16:9
+(1720x720 on a 21:9 monitor) and taller on a narrower monitor; `W` and `H` are the frame the piece lays out from.
+Colours are the rgba tuples of draw.py (`d.BONE`, `d.col("ink4")`).
+
+Everything here is something the GPU draws by itself: rectangles, borders, glyphs, pictures and gradients, moved
+by transforms and cut by masks. Nothing is rasterised on the CPU frame after frame, which rules two things out:
+
+- Path nodes. GTK rasterises a path each time it changes, and in a piece everything changes every frame; and
+  cairo, which draws the offline frames, asserts on some nested path clips. A shape that is not a rectangle is
+  a turned or sheared one (`lines`, `para`).
+- Glyphs under a scale that changes. GTK keeps a glyph by its exact size on screen, so type that grows or
+  shrinks is rasterised again for every frame. Such type is a `stamp`: set once as a picture, then scaled.
+"""
+import contextlib
+import math
+
+import cairo
+
+from .. import gtkutil  # (pins GTK 4 before any gi.repository import)
+
+import gi  # noqa: E402
+
+gi.require_version("Gsk", "4.0")
+from gi.repository import Gdk, GLib, Graphene, Gsk, Pango  # noqa: E402
+
+from .. import draw as d  # noqa: E402
+from .timeline import clamp  # noqa: E402
+
+STAMP_SIDE = 2048      # a stamp's picture is never wider or taller than this many px; past that it is scaled up
+PLAIN = {"common", "inherited", "latin", "greek", "cyrillic", "armenian", "georgian", "han", "hiragana", "katakana",
+         "hangul", "bopomofo"}       # scripts whose letters stand apart and run left to right: a name in them can be cut
+
+_layouts = {}          # (string, family, weight, size, spacing) -> Pango layout
+_letters = {}          # the same key -> what letters() found
+_colours = {}          # (rgba tuple, alpha) -> Gdk.RGBA
+_stamps = {}           # the stamps of kits that were given no store of their own (the offline renderer's)
+_UNIT = Graphene.Rect().init(0, 0, 1, 1)
+
+
+def design(w, h):
+    """(s, W, H) for a w x h surface: the scale, and the frame in design px."""
+    s = min(h / 720, w / 1280)
+    return s, w / s, h / s
+
+
+def _rgba(colour, alpha=1.0):
+    alpha = round(alpha, 3)                          # the key is what is drawn: a frame must not depend on the frames before it
+    key = (colour, alpha)
+    c = _colours.get(key)
+    if c is None:
+        if len(_colours) > 2048:
+            _colours.clear()
+        c = _colours[key] = Gdk.RGBA()
+        c.red, c.green, c.blue, c.alpha = colour[0], colour[1], colour[2], colour[3] * alpha
+    return c
+
+
+def _rect(x, y, w, h):
+    return Graphene.Rect().init(x, y, w, h)
+
+
+def _point(x, y):
+    return Graphene.Point().init(x, y)
+
+
+def _face(face):
+    return (d.F_DISPLAY, d.DISPLAY_WEIGHT) if face == "display" else (d.F_META, 400)
+
+
+def _layout(string, face, size, spacing):
+    key = (string, *_face(face), size, spacing)
+    lay = _layouts.get(key)
+    if lay is None:
+        if len(_layouts) > 512:                      # a running counter makes a new string every frame
+            _layouts.clear()
+        lay = _layouts[key] = d.plain_layout(string, key[1], size, weight=key[2], spacing=spacing)
+    return lay
+
+
+def _stamp(store, string, face, size, spacing, colour, fine):
+    """(texture, x, y, w, h): `string` as a picture, `fine` px to the design px, and where it lies about its layout's corner."""
+    lay = _layout(string, face, size, spacing)
+    ink = lay.get_pixel_extents()[0]
+    x, y, w, h = ink.x - 1, ink.y - 1, ink.width + 2, ink.height + 2      # a clear px all round: its edge is filtered when it is scaled
+    fine = min(fine, STAMP_SIDE / max(w, h))
+    pw, ph = (max(1, min(STAMP_SIDE, math.ceil(side * fine))) for side in (w, h))
+    key = (string, *_face(face), size, spacing, colour, pw, ph)
+    made = store.get(key)
+    if made is None:
+        if len(store) > 64:
+            store.clear()
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, pw, ph)
+        cr = cairo.Context(surf)
+        cr.scale(pw / w, ph / h)
+        d.draw_text(cr, lay, -x, -y, colour)
+        made = store[key] = (gtkutil.texture(surf), x, y, w, h)
+    return made
+
+
+class Kit:
+    def __init__(self, snap, w, h, density=1.0, stamps=None):
+        """A kit over `snap` for a w x h frame. `density` is how many px the monitor has to one unit of w and h;
+        `stamps` is where the pictures of type are kept (whoever owns it decides when they go)."""
+        self.snap = snap
+        self.s, self.W, self.H = design(w, h)
+        self.density = density
+        self.stamps = _stamps if stamps is None else stamps
+        snap.save()
+        snap.scale(self.s, self.s)
+
+    def close(self):
+        """Undo the scale. Whoever made the kit calls this once the piece has painted."""
+        self.snap.restore()
+
+    # ---------------------------------------------------------------- shapes
+    def rect(self, x, y, w, h, colour, alpha=1.0):
+        if w > 0 and h > 0:
+            self.snap.append_color(_rgba(colour, alpha), _rect(x, y, w, h))
+
+    def _border(self, x, y, w, h, widths, colour, alpha):
+        outline = Gsk.RoundedRect()
+        outline.init_from_rect(_rect(x, y, w, h), 0)
+        c = _rgba(colour, alpha)
+        self.snap.append_border(outline, widths, [c, c, c, c])
+
+    def stroke_rect(self, x, y, w, h, colour, width, alpha=1.0):
+        """The outline of a rectangle, the stroke centred on its edge."""
+        self._border(x - width / 2, y - width / 2, w + width, h + width, [width] * 4, colour, alpha)
+
+    def band(self, outer, inner, colour, alpha=1.0):
+        """What lies between two rectangles (x, y, w, h), the inner one inside the outer."""
+        (ox, oy, ow, oh), (ix, iy, iw, ih) = outer, inner
+        self._border(ox, oy, ow, oh, [iy - oy, ox + ow - ix - iw, oy + oh - iy - ih, ix - ox], colour, alpha)      # top, right, bottom, left
+
+    def para(self, p0, p1, p3, colour, alpha=1.0):
+        """A parallelogram with corners p0, p1, p1 + p3 - p0, p3: a sheared rectangle."""
+        ux, uy, vx, vy = p1[0] - p0[0], p1[1] - p0[1], p3[0] - p0[0], p3[1] - p0[1]
+        if abs(ux * vy - uy * vx) < 1e-9:
+            return
+        length, turn = math.hypot(ux, uy), math.atan2(uy, ux)
+        c, s = math.cos(turn), math.sin(turn)
+        sx, sy = vx * c + vy * s, vy * c - vx * s            # the second side, seen with the first one lying along x
+        self.snap.save()                                     # turn, shear, scale: a raw matrix would not count as 2D,
+        self.snap.translate(_point(p0[0], p0[1]))            # and GTK cannot draw those offline
+        if turn:
+            self.snap.rotate(math.degrees(turn))
+        if abs(sx) > 1e-9:
+            self.snap.transform(Gsk.Transform.new().skew(math.degrees(math.atan(sx / sy)), 0))
+        self.snap.scale(length, sy)
+        self.snap.append_color(_rgba(colour, alpha), _UNIT)
+        self.snap.restore()
+
+    def lines(self, segments, colour, width, alpha=1.0):
+        """Segments [(x0, y0, x1, y1), ...] of one colour and width, each a turned rectangle."""
+        c = _rgba(colour, alpha)
+        for x0, y0, x1, y1 in segments:
+            length = math.hypot(x1 - x0, y1 - y0)
+            if length <= 0:
+                continue
+            self.snap.save()
+            self.snap.translate(_point(x0, y0))
+            self.snap.rotate(math.degrees(math.atan2(y1 - y0, x1 - x0)))
+            self.snap.append_color(c, _rect(0, -width / 2, length, width))
+            self.snap.restore()
+
+    def hazard(self, x, y, w, h, a, b=None, period=28.0, offset=0.0, alpha=1.0):
+        """Diagonal warning stripes inside the box, as draw.hazard paints them; `offset` slides them to the right."""
+        if w <= 0 or h <= 0:
+            return
+        with self.clip(x, y, w, h):
+            if b is not None:
+                self.rect(x, y, w, h, b, alpha)
+            half = period / 2
+            k = x - h - period + offset % period
+            while k < x + w + h:
+                self.para((k, y + h), (k + half, y + h), (k + h, y), a, alpha)
+                k += period
+
+    def segbar(self, x, y, w, h, value, colour, n, off=None):
+        """A bar of n segments, the first `value` of them lit."""
+        off = d.col("ink4") if off is None else off
+        pitch, lit = w / n, round(clamp(value) * n)
+        for i in range(n):
+            self.rect(x + i * pitch, y, pitch * 0.72, h, colour if i < lit else off)
+
+    def radial(self, x, y, r, colour, alpha):
+        """A glow: `alpha` at the centre, nothing at r."""
+        if r <= 0 or alpha <= 0:
+            return
+        inner, outer = Gsk.ColorStop(), Gsk.ColorStop()
+        inner.offset, inner.color = 0.0, _rgba(colour, alpha)
+        outer.offset, outer.color = 1.0, _rgba(colour, 0.0)
+        self.snap.append_radial_gradient(_rect(x - r, y - r, 2 * r, 2 * r), _point(x, y), r, r, 0.0, 1.0, [inner, outer])
+
+    # ---------------------------------------------------------------- type
+    def measure(self, string, size, face="meta", spacing=0.0):
+        return _layout(string, face, size, spacing).get_pixel_extents()[1].width
+
+    def text(self, string, x, y, size, colour, face="meta", spacing=0.0, align="left", alpha=1.0):
+        """Type as glyphs: for type that keeps its size while it shows (it may move). `y` is the baseline;
+        returns the width."""
+        lay = _layout(string, face, size, spacing)
+        width = lay.get_pixel_extents()[1].width
+        if string and alpha > 0:
+            left = x - (width if align == "right" else width / 2 if align == "center" else 0)
+            self.snap.save()
+            self.snap.translate(_point(left, y - lay.get_baseline() / Pango.SCALE))
+            self.snap.append_layout(lay, _rgba(colour, alpha))
+            self.snap.restore()
+        return width
+
+    def stamp(self, string, x, y, size, colour, face="meta", spacing=0.0, align="left", alpha=1.0, most=1.0):
+        """Type that changes size while it shows: text(), but set once as a picture that the GPU then scales.
+        `most` is the largest scale it is drawn under, which is how fine the picture is made."""
+        lay = _layout(string, face, size, spacing)
+        width = lay.get_pixel_extents()[1].width
+        if string and alpha > 0:
+            texture, bx, by, bw, bh = _stamp(self.stamps, string, face, size, spacing, colour, self.s * self.density * most)
+            left = x - (width if align == "right" else width / 2 if align == "center" else 0)
+            with self.opacity(alpha) if alpha < 1 else contextlib.nullcontext():
+                self.snap.append_texture(texture, _rect(left + bx, y - lay.get_baseline() / Pango.SCALE + by, bw, bh))
+        return width
+
+    def letters(self, string, size, face="meta", spacing=0.0):
+        """`string` cut where a caret can stand: letters, each with its marks, a ligature or an emoji whole.
+        None when cutting would change how it reads: a script that joins its letters, or runs right to left."""
+        key = (string, *_face(face), size, spacing)
+        if key not in _letters:
+            if len(_letters) > 256:
+                _letters.clear()
+            _letters[key] = None
+            if all(getattr(GLib.unichar_get_script(ch), "value_nick", "") in PLAIN for ch in string):
+                cuts, it = set(), _layout(string, face, size, spacing).get_iter()
+                while True:
+                    cuts.add(it.get_index())
+                    if not it.next_cluster():
+                        break
+                raw = string.encode()
+                cuts = sorted(cuts) + [len(raw)]
+                _letters[key] = [raw[a:b].decode() for a, b in zip(cuts, cuts[1:]) if b > a]
+        found = _letters[key]
+        return None if found is None else list(found)
+
+    # ---------------------------------------------------------------- scopes: `with kit.clip(...):`
+    @contextlib.contextmanager
+    def clip(self, x, y, w, h):
+        self.snap.push_clip(_rect(x, y, max(0, w), max(0, h)))
+        try:
+            yield
+        finally:
+            self.snap.pop()
+
+    @contextlib.contextmanager
+    def _cut(self, draw_mask):
+        """What is painted inside shows everywhere but where `draw_mask` paints."""
+        self.snap.push_mask(Gsk.MaskMode.INVERTED_ALPHA)
+        draw_mask()
+        self.snap.pop()                              # the mask is recorded; what follows is the picture it cuts
+        try:
+            yield
+        finally:
+            self.snap.pop()
+
+    def clip_out(self, x, y, w, h):
+        """Everything but this rectangle (a mask, so it also works turned)."""
+        return self._cut(lambda: self.rect(x, y, w, h, d.INK))
+
+    def clip_out_para(self, p0, p1, p3):
+        """Everything but this parallelogram (corners as in para())."""
+        return self._cut(lambda: self.para(p0, p1, p3, d.INK))
+
+    @contextlib.contextmanager
+    def opacity(self, alpha):
+        self.snap.push_opacity(clamp(alpha))
+        try:
+            yield
+        finally:
+            self.snap.pop()
+
+    @contextlib.contextmanager
+    def transform(self, dx=0.0, dy=0.0, rotate=0.0, scale=1.0):
+        """Move the origin, then turn about it (radians), then scale about it."""
+        self.snap.save()
+        self.snap.translate(_point(dx, dy))
+        if rotate:
+            self.snap.rotate(math.degrees(rotate))
+        if scale != 1.0:
+            self.snap.scale(scale, scale)
+        try:
+            yield
+        finally:
+            self.snap.restore()

@@ -68,7 +68,11 @@ window on a workspace opens, then stays still. `Super+D` docks a window into its
 <p align="center"><img src="docs/eva-launcher.png" alt="the launcher" width="100%"></p>
 
 **Launcher** (`Super+Space`). Type to search apps. The query is set large, matches are listed below it, the
-selected one gets a detail card on the right.
+selected one gets a detail card on the right. Enter starts the entry and plays a two-second launch sequence
+over the desk while it opens: a title card with the app's name, or for a game a run up a launch shaft that
+ends at your desk. The sequence does not take the keyboard: what you type goes to the focused window, which is
+the new one as soon as it opens. A click skips the sequence. Shift+Enter launches without it; `launch = false`
+under `[motion]` turns it off.
 
 <p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
 
@@ -165,7 +169,8 @@ script, turn them off, or disable eva-desk's with `[bar] enabled = false` and `[
 Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
 
 Optional: `awww` or `swww` for wallpapers, `wpctl` for volume, `playerctl` for now playing, `grim` and
-`wl-copy` for screenshots, `hyprlock` for the lock screen, Pillow for rendering the lock and login backgrounds.
+`wl-copy` for screenshots, `hyprlock` for the lock screen, Pillow for rendering the lock and login backgrounds,
+`ffmpeg` for mp4 previews of the motion sequences (`eva-desk --render-motion`).
 The sound panel reads and sets audio with `pactl` (libpulse) and `gojq`, finds app icons with `geticons`;
 its quick toggles use `dunstctl` (dunst, do-not-disturb), `wlsunset` (night light) and `powerprofilesctl`
 (power-profiles-daemon). Without `pactl` or `gojq` the panel shows NO SIGNAL; a missing toggle tool only
@@ -204,6 +209,7 @@ eva-ctl figure toggle          # the figure and its space
 eva-ctl impact figure          # replay the entrance
 eva-ctl herald                 # replay the maximise backdrop
 eva-ctl eyecatch 3 PROJECTS    # try the workspace card
+eva-ctl play card FIREFOX      # try a launch sequence: card or shaft, with any name
 eva-ctl alarm "text"           # try the EMERGENCY band
 eva-ctl alttab                 # the window switcher
 eva-ctl power                  # the power menu
@@ -299,6 +305,7 @@ the focused window entirely; `sound = false` drops the sound panel.
 ```sh
 python3 -m unittest discover -s tests     # logic tests, no compositor needed
 eva-desk --render DIR                      # every scene, overlay, the bar and the launcher as PNGs
+eva-desk --render-motion DIR               # every motion sequence as a contact sheet and an mp4
 HL_VERIFY=1 Hyprland --verify-config -c ~/.config/hypr/hyprland.lua
 ```
 

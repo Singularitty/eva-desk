@@ -3,6 +3,8 @@
   eva-desk                 run the daemon (one instance per session)
   eva-desk --write-lua     regenerate ~/.config/eva-desk/settings.lua for hypr/eva.lua
   eva-desk --render DIR    render every scene, flash, the bar and the launcher to PNGs (no windows)
+  eva-desk --render-motion DIR [--only NAME] [--size WxH] [--fps N]
+                           every motion piece as a contact sheet (PNG) and, with ffmpeg, an mp4 (no windows)
 """
 import argparse
 import ctypes
@@ -73,6 +75,10 @@ def main():
     ap.add_argument("--config", help="path to eva.toml")
     ap.add_argument("--write-lua", action="store_true")
     ap.add_argument("--render", metavar="DIR")
+    ap.add_argument("--render-motion", metavar="DIR")
+    ap.add_argument("--only", metavar="NAME", help="with --render-motion: this piece only")
+    ap.add_argument("--size", metavar="WxH", default="1720x720", help="with --render-motion: the frame size")
+    ap.add_argument("--fps", type=int, default=30, help="with --render-motion: frames a second in the mp4")
     a = ap.parse_args()
     cfg = config.load(a.config)
 
@@ -83,6 +89,18 @@ def main():
     if a.render:
         from .preview import render_all
         render_all(cfg, a.render)
+        return
+    if a.render_motion:
+        from .motion import pieces, render
+        try:
+            size = render.parse_size(a.size)
+        except ValueError as e:
+            print(f"eva-desk: {e}")
+            sys.exit(2)
+        if a.only is not None and a.only not in pieces():
+            print(f"eva-desk: no motion piece named {a.only} ({', '.join(pieces())})")
+            sys.exit(2)
+        render.render_motion(a.render_motion, a.only, size, a.fps)
         return
 
     from . import ipc

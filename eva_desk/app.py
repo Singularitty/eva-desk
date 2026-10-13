@@ -104,6 +104,16 @@ class App(Gtk.Application):
                 self.panels["sound"] = SoundPanel(self, cfg)
         except Exception:
             traceback.print_exc()
+        self.motion = None                               # the sequence player (the launch; more pieces to come)
+        try:
+            from . import motion
+            if motion.available():
+                from .motion.player import SequencePlayer
+                self.motion = SequencePlayer(self)
+            else:
+                print("eva-desk: motion needs GTK 4.10 or newer", flush=True)
+        except Exception:
+            traceback.print_exc()
         self.frames, self.frame_gdk = {}, {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)
@@ -153,9 +163,16 @@ class App(Gtk.Application):
             traceback.print_exc()
         return False
 
+    def _covered(self):
+        """A sequence that covers the screen is playing: nothing else is drawn over it."""
+        motion = getattr(self, "motion", None)
+        return motion is not None and motion.busy
+
     def _spawn_pulse(self, address):
-        """A hexagon pulse where a new window landed (main monitors only, never over a game)."""
+        """A hexagon pulse where a new window landed (main monitors only, never over a game or a launch sequence)."""
         try:
+            if self._covered():                              # the window a launch opens lands under its sequence
+                return
             client = next((c for c in self.hypr.j("clients") or [] if c.get("address", "").endswith(address)), None)
             if not client or not client.get("mapped", True) or class_matches(client.get("class", ""), self.cfg["figures"]["ignore_classes"]):
                 return
@@ -322,7 +339,7 @@ class App(Gtk.Application):
                 self._hooks(prev.get("ws_name"), wname)
                 eye = getattr(self, "overlays", {}).get("eyecatch")
                 if (eye and prev and isinstance(wid, int) and wid > 0 and not game and m.get("focused")
-                        and time.monotonic() - self.last_pull > 0.4):
+                        and time.monotonic() - self.last_pull > 0.4 and not self._covered()):
                     label = str(cfg["overlays"].get("names", {}).get(str(wid), "") or "")
                     try:
                         eye.play(self.gdk_of.get(name), wid, label)
@@ -440,6 +457,20 @@ class App(Gtk.Application):
             return f"{name} disabled"
         return p.open(gdk)
 
+    def play_launch(self, name, game, gdk_monitor):
+        """The launch sequence for a launcher entry: the card for an app, the shaft for a game."""
+        if getattr(self, "motion", None) is None or not self.cfg["motion"]["launch"]:
+            return False
+        from .motion.seq.card import Card
+        from .motion.seq.shaft import Shaft
+        return self._play(Shaft() if game else Card(), name, gdk_monitor)
+
+    def _play(self, piece, name, gdk_monitor=None):
+        """Play a piece on that monitor (the focused one when none is given), with the inputs it may show."""
+        ws = (self.hypr.j("activeworkspace") or {}).get("id")
+        ctx = {"app": name, "workspace": ws if isinstance(ws, int) and ws > 0 else None, "clock": time.strftime("%H:%M")}
+        return self.motion.play(piece, gdk_monitor or self.focused_gdk(), ctx)
+
     def close_panels(self, except_name=None):
         for name, p in list(getattr(self, "panels", {}).items()):
             if name != except_name:
@@ -494,6 +525,17 @@ class App(Gtk.Application):
             except Exception:
                 traceback.print_exc()
                 return "panel failed (see the log)"
+        if cmd == "play":                                  # try a motion piece: play NAME [TEXT]
+            from . import motion
+            names = motion.pieces()
+            if not args:
+                return "play: " + " | ".join(names)
+            if args[0] not in names:
+                return f"unknown piece: {args[0]} ({', '.join(names)})"
+            if getattr(self, "motion", None) is None:
+                return "motion is not available"
+            self._play(names[args[0]](), " ".join(args[1:]) or "EVA-DESK")
+            return "ok"
         if cmd == "eyecatch":
             o = self.overlays.get("eyecatch")
             if not o:

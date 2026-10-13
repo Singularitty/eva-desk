@@ -106,6 +106,9 @@ DEFAULTS = {
         "enabled": True,
         "search_url": "https://duckduckgo.com/?q={}",
     },
+    "motion": {                   # sequences the daemon plays when something happens
+        "launch": True,           # Enter in the launcher plays one: the card for an app, the shaft for a game
+    },
     "hyprland": {
         "maximize_bind": ["SUPER + RETURN"],   # one key or a list; fills the screen under the bar
         "launcher_bind": "SUPER + Space",

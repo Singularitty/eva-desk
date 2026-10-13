@@ -100,6 +100,20 @@ class Logic(unittest.TestCase):
         self.assertEqual(self.step(3, [win(3, fs=1)]), ("herald", False, True))        # herald anywhere
         self.assertEqual(self.step(1, [win(1, cls="steam_app_42", fs=2)]), (None, False, False))  # game
 
+    def test_no_eyecatch_under_a_sequence_that_covers(self):
+        plays = []
+        self.app.overlays = {"eyecatch": type("Eye", (), {"play": lambda s, *a: plays.append(a)})()}
+        self.app.last_pull = 0.0
+        self.step(1, [win(1)])
+        self.step(2, [win(2)])                           # a switch you made: the card
+        self.assertEqual([p[1] for p in plays], [2])
+        self.app.motion = type("Player", (), {"busy": True})()
+        self.step(3, [win(3)])                           # the same under a launch sequence: nothing is drawn over it
+        self.assertEqual([p[1] for p in plays], [2])
+        self.app.motion.busy = False
+        self.step(4, [win(4)])
+        self.assertEqual([p[1] for p in plays], [2, 4])
+
     def test_command_panel_toggle(self):
         calls = []
         class P:

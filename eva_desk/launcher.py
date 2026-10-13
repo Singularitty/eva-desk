@@ -37,6 +37,18 @@ def C(h, a=1.0):
     return d.hexc(h, a)
 
 
+def launch_info(item):
+    """(the name a launch sequence shows, whether the entry is a game) for one launcher result."""
+    kind, v = item
+    if kind == "app":
+        name = (v.get_display_name() or v.get_name() or "").strip().upper() or "APP"
+        return name, "Game" in (v.get_categories() or "").split(";")       # the .desktop file's Categories
+    if kind == "cmd":
+        words = v.split()
+        return (words[0].rsplit("/", 1)[-1].upper() if words else "RUN"), False
+    return "SEARCH", False
+
+
 class Launcher:
     def __init__(self, app, cfg, hypr):
         self.cfg, self.hypr, self.app = cfg, hypr, app
@@ -82,6 +94,7 @@ class Launcher:
         close_panels = getattr(self.app, "close_panels", None)
         if close_panels is not None:                   # a panel and the launcher never share the screen
             close_panels()
+        self.gdk_monitor = gdk_monitor                 # the launch sequence plays where the launcher was
         if gdk_monitor is not None:
             LS.set_monitor(self.win, gdk_monitor)
             geo = gdk_monitor.get_geometry()
@@ -159,9 +172,9 @@ class Launcher:
             return f"RUN · {v}".upper()
         return f'SEARCH THE WEB FOR "{v}"'.upper()
 
-    def _launch(self, item):
+    def _launch(self, item, plain=False):
+        """Start the entry, hide, and play the launch sequence where the launcher was (not when `plain`)."""
         kind, v = item
-        ctx = Gdk.Display.get_default().get_app_launch_context()
         try:
             if kind == "app":
                 key = v.get_id() or v.get_name()
@@ -171,7 +184,7 @@ class Launcher:
                     # through Hyprland, like a keybind: own stdio, window rules apply, not our child
                     self.hypr.exec("gtk-launch " + shlex.quote(v.get_id()))
                 else:
-                    v.launch([], ctx)
+                    v.launch([], Gdk.Display.get_default().get_app_launch_context())
             elif kind == "cmd":
                 self.hypr.exec(v)
             else:
@@ -180,6 +193,9 @@ class Launcher:
         except GLib.Error as e:
             print("eva-desk: launch failed:", e, flush=True)
         self.hide()
+        play = getattr(self.app, "play_launch", None)
+        if play is not None and not plain:
+            play(*launch_info(item), getattr(self, "gdk_monitor", None))
 
     def _save_counts(self):
         try:
@@ -196,8 +212,8 @@ class Launcher:
         if name == "Escape":
             self.hide()
         elif name in ("Return", "KP_Enter"):
-            if self.results:
-                self._launch(self.results[self.sel])
+            if self.results:                          # Shift+Enter launches without the sequence
+                self._launch(self.results[self.sel], plain=bool(mods & Gdk.ModifierType.SHIFT_MASK))
         elif name in ("Down", "Tab"):
             self.sel = min(self.sel + 1, max(0, len(self.results) - 1))
             self.area.queue_draw()

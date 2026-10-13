@@ -22,6 +22,7 @@ pkgbase = eva-desk-git
 	optdepends = python-pillow: render the lock and login backgrounds
 	optdepends = python-numpy: the GTK theme builder (eva-desk-setup --gtk) and the asset tools
 	optdepends = python-scipy: the figure cutout tool (tools/gen)
+	optdepends = ffmpeg: mp4 previews from eva-desk --render-motion
 	optdepends = kitty: the kitty theme (eva-extras)
 	optdepends = starship: the prompt theme (eva-extras)
 	optdepends = greetd-regreet: the login screen

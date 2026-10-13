@@ -241,7 +241,16 @@ def silhouette_mask(cr, mask, echo=18.0, color=None, echo_color=None):
 
 # ---------------------------------------------------------------- text
 def layout(cr, text, family, size, weight=Pango.Weight.NORMAL, italic=False, spacing=0):
-    lay = PangoCairo.create_layout(cr)
+    return _dress(PangoCairo.create_layout(cr), text, family, size, weight, italic, spacing)
+
+
+def plain_layout(text, family, size, weight=Pango.Weight.NORMAL, italic=False, spacing=0):
+    """layout() with no cairo context behind it: for GTK snapshots (the motion kit) and for measuring."""
+    lay = Pango.Layout.new(PangoCairo.FontMap.get_default().create_context())
+    return _dress(lay, text, family, size, weight, italic, spacing)
+
+
+def _dress(lay, text, family, size, weight, italic, spacing):
     fd = Pango.FontDescription()
     fd.set_family(family)
     fd.set_absolute_size(size * Pango.SCALE)

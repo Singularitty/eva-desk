@@ -132,6 +132,23 @@ def render_all(cfg, out, w=3440, h=1440):
     lau.counts["terminal.desktop"] = 214
     save("launcher", w, h, lambda cr: (L._background(cr, w, h), lau._draw(None, cr, w, h)))
 
+    # the motion pieces, one frame each (their contact sheets and mp4s come from --render-motion)
+    for path in motion_stills(out, w, h):
+        print(f"{path.stem}: one frame")
+
+
+def motion_stills(out, w, h):
+    """motion_NAME.png for every motion piece: the frame it names as its still, over a stand-in desk."""
+    from .motion import pieces, render
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    made = []
+    for name, cls in pieces().items():
+        piece = cls()
+        made.append(out / f"motion_{name}.png")
+        render.over_desk(render.frame(piece, piece.still, w, h, render.fixture_ctx())).write_to_png(str(made[-1]))
+    return made
+
 
 def _mfd_sampler(cr, w, h):
     """One MFD screen: three list rows, a key row and three lamps (off / on / hot), plus a lone

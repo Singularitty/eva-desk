@@ -114,6 +114,10 @@ shutdown = "systemctl poweroff"
 enabled = true
 search_url = "https://duckduckgo.com/?q={}"
 
+[motion]                  # sequences the daemon plays when something happens
+launch = true             # Enter in the launcher plays one while the entry opens: a title card for an app, a launch
+                          # shaft for a game. A click skips it; Shift+Enter launches without it
+
 [hyprland]
 maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)
 launcher_bind = "SUPER + Space"   # this key opens the eva-desk launcher ("" = leave it alone)

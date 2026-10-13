@@ -11,6 +11,7 @@
   eva-ctl panel NAME|close      toggle a named MFD panel, or close whichever one is open
   eva-ctl panel sound|close     the sound panel (outputs, inputs, streams, quick toggles)
   eva-ctl eyecatch [N [NAME]]   play the workspace eye-catch (to try it)
+  eva-ctl play card|shaft [NAME] play a launch sequence on the focused monitor (to try it)
   eva-ctl alarm [TEXT]          show the EMERGENCY band (to try it)
   eva-ctl bar show|hide
   eva-ctl status | reload | quit
