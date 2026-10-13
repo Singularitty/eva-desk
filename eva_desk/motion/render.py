@@ -23,7 +23,10 @@ CELL = 860             # a frame on a contact sheet is at most this wide
 
 def fixture_ctx():
     """The inputs every offline render uses, so two runs give the same frames."""
-    return {"app": "FIREFOX", "workspace": 2, "clock": "22:44"}
+    return {"app": "FIREFOX", "workspace": 2, "clock": "22:44",
+            "outputs": ["3440×1440", "1080×1920"], "hyprland": "0.56", "lua": True, "net": "lan",       # boot
+            "load": "CPU 97%", "seconds": 30,                                                          # berserk
+            "title": "Walking on a Dream", "artist": "Empire of the Sun", "corner": "bottom-left"}     # the track card
 
 
 def parse_size(text):

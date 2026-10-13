@@ -13,6 +13,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from ..overlays import _Overlay  # noqa: E402
 from .kit import Kit  # noqa: E402
+from .triggers import outranks  # noqa: E402
 
 
 class SequencePlayer(_Overlay):
@@ -31,6 +32,7 @@ class SequencePlayer(_Overlay):
         self.started = None        # the frame clock's time at the first tick
         self.run = 0               # bumped by every play(), so a late timer knows it is stale
         self.broken = False        # the running piece raised: it paints nothing more and ends from the main loop
+        self.held = False          # the piece is up on its first frame and has not been started
         self.stamps = {}           # the pictures the running piece had made of its type (kit.stamp); they go with it
         self.tick_id = None
         self.w = self.h = 0
@@ -44,9 +46,10 @@ class SequencePlayer(_Overlay):
     def _kit(self, snap, w, h):
         return Kit(snap, w, h, self.scale, self.stamps)
 
-    def play(self, piece, gdk_monitor, ctx, on_done=None):
+    def play(self, piece, gdk_monitor, ctx, on_done=None, held=False):
         """Play `piece` on that monitor, in place of whatever was playing. False when it cannot be played:
-        there is no monitor, or the piece failed to prepare."""
+        there is no monitor, or the piece failed to prepare. A `held` piece is put up on its first frame and waits
+        there for start(): no clock runs and no safety counts down, since it may wait for hours under a lock screen."""
         self.finish()
         self.w = self.h = 0                         # place() keeps the last monitor's size when it is given none
         self.place(gdk_monitor)
@@ -62,19 +65,32 @@ class SequencePlayer(_Overlay):
             return False
         finally:
             kit.close()
-        self.piece, self.ctx, self.on_done = piece, ctx, on_done
+        self.piece, self.ctx, self.on_done, self.held = piece, ctx, on_done, held
         self.at, self.started = 0.0, None
         self.run += 1
-        run = self.run
-        if piece.length is not None:               # the safety: one second past its length it is gone, whatever happened,
-            self._after(int((piece.length + 1) * 1000), lambda: self.finish() if self.run == run else None)     # showing it included
+        if not held:
+            self._arm()                             # before it is shown: the safety covers a show() that fails, too
         self.show()
         surface = self.win.get_surface()
         if surface is not None:
             whole = cairo.Region(cairo.RectangleInt(0, 0, int(self.w), int(self.h)))
             surface.set_input_region(whole if piece.covers else cairo.Region())
-        self.tick_id = self.view.add_tick_callback(self._tick)
+        if not held:
+            self.tick_id = self.view.add_tick_callback(self._tick)
         return True
+
+    def _arm(self):
+        """The safety: one second past its length the piece is gone, whatever happened."""
+        run = self.run
+        if self.piece.length is not None:
+            self._after(int((self.piece.length + 1) * 1000), lambda: self.finish() if self.run == run else None)
+
+    def start(self):
+        """Set a held piece going from its first frame. Nothing when none is held."""
+        if self.piece is not None and self.held:
+            self.held = False
+            self._arm()
+            self.tick_id = self.view.add_tick_callback(self._tick)
 
     def _after(self, ms, fn):
         GLib.timeout_add(ms, lambda: (fn(), False)[1])
@@ -109,7 +125,7 @@ class SequencePlayer(_Overlay):
         if piece is None:
             return
         self.piece = self.ctx = self.on_done = None        # cleared first: the done callback may play the next piece
-        self.stamps = {}
+        self.stamps, self.held = {}, False
         self.hide()
         try:
             piece.release()
@@ -132,3 +148,52 @@ class SequencePlayer(_Overlay):
             print(f"eva-desk: motion: {piece.name or type(piece).__name__}: {e}", flush=True)
             self.broken, run = True, self.run       # GTK is in the middle of drawing this window: hiding it has to
             self._after(0, lambda: self.finish() if self.run == run else None)      # wait for the main loop
+
+
+class Players:
+    """One SequencePlayer per monitor, made when a piece first plays there, and the rule for what interrupts what:
+    on a monitor, a piece plays only if it outranks what is playing there (triggers.outranks); otherwise it is dropped."""
+
+    def __init__(self, app, make=SequencePlayer):
+        self.app, self.make = app, make
+        self.by_monitor = {}                        # Gdk monitor -> its player
+
+    @property
+    def busy(self):
+        """A piece that covers the screen is playing on some monitor."""
+        return any(player.busy for player in self.by_monitor.values())
+
+    def play(self, piece, gdk_monitor, ctx, on_done=None, held=False):
+        """SequencePlayer.play on that monitor. False as there, and when what plays there outranks the piece."""
+        if gdk_monitor is None:
+            return False
+        player = self.by_monitor.get(gdk_monitor)
+        if player is None:
+            player = self.by_monitor[gdk_monitor] = self.make(self.app)
+        elif player.piece is not None and not outranks(piece, player.piece):
+            return False
+        return player.play(piece, gdk_monitor, ctx, on_done, held)
+
+    def playing(self, gdk_monitor):
+        """The piece that is up on that monitor, held or running; None when there is none."""
+        player = self.by_monitor.get(gdk_monitor)
+        return player.piece if player is not None else None
+
+    def start(self):
+        """Set every held piece going."""
+        for player in self.by_monitor.values():
+            player.start()
+
+    def stop(self, name=None):
+        """End what is playing: everything, or the pieces of that name."""
+        for player in list(self.by_monitor.values()):
+            if player.piece is not None and name in (None, player.piece.name):
+                player.finish()
+
+    def forget(self, alive):
+        """Destroy the players of monitors that are not among `alive`."""
+        alive = list(alive)
+        for monitor in [m for m in self.by_monitor if m not in alive]:
+            player = self.by_monitor.pop(monitor)
+            player.finish()
+            player.destroy()

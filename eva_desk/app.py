@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import traceback
+from pathlib import Path
 
 from . import gtkutil  # noqa: F401  (pins GTK 4 before any gi.repository import)
 
@@ -11,6 +12,7 @@ from gi.repository import Gio, GLib, Gtk
 
 from . import config, ipc
 from .hypr import Hypr, class_matches
+from .motion import triggers
 
 
 class App(Gtk.Application):
@@ -70,17 +72,20 @@ class App(Gtk.Application):
                 self.tray = Tray(self._on_tray)
             except Exception:
                 traceback.print_exc()
+        self.tracks = triggers.TrackWatch(time.monotonic())      # which reports of the player are a new track
+        self.lock_watch = triggers.LockWatch()                   # what the session's lock state means for the wake cover
         if cfg["bar"]["enabled"]:
             from .audio import Volume
             self.volume = Volume(self._on_volume)
-            if cfg["bar"]["resources"]:
-                from .resources import Sampler
-                self.sampler = Sampler()
-                self._resources()
-                GLib.timeout_add_seconds(max(1, int(cfg["bar"]["resource_seconds"])), self._resources)
-            if cfg["bar"]["music"]:
-                from .media import NowPlaying
-                self.now_playing = NowPlaying(self._on_music, cfg["bar"]["music_players"])
+        if (cfg["bar"]["enabled"] and cfg["bar"]["resources"]) or int(cfg["overlays"].get("berserk", 0) or 0) > 0:
+            from .resources import Sampler                   # the bar's tags, and the load that turns the desk berserk
+            self.sampler = Sampler()
+            self._resources()
+            GLib.timeout_add_seconds(max(1, int(cfg["bar"]["resource_seconds"])), self._resources)
+        if (cfg["bar"]["enabled"] and cfg["bar"]["music"]) or cfg["motion"]["track"]:
+            from .media import NowPlaying                    # the bar's tag, and the track card
+            self.now_playing = NowPlaying(self._on_music, cfg["bar"]["music_players"])
+            self._later(0, lambda: self.tracks.begin(time.monotonic()))      # its reports flow once the main loop runs
         self.overlays = {}
         ov = cfg["overlays"]
         try:
@@ -104,12 +109,12 @@ class App(Gtk.Application):
                 self.panels["sound"] = SoundPanel(self, cfg)
         except Exception:
             traceback.print_exc()
-        self.motion = None                               # the sequence player (the launch; more pieces to come)
+        self.motion = None                               # the sequence players, one per monitor
         try:
             from . import motion
             if motion.available():
-                from .motion.player import SequencePlayer
-                self.motion = SequencePlayer(self)
+                from .motion.player import Players
+                self.motion = Players(self)
             else:
                 print("eva-desk: motion needs GTK 4.10 or newer", flush=True)
         except Exception:
@@ -119,6 +124,12 @@ class App(Gtk.Application):
         self.ipc = ipc.Server(self.command)
         self.hypr.listen(self._event)
         self.refresh()
+        try:
+            self._boot()
+        except Exception:                                # the desk comes up with or without its sequence
+            traceback.print_exc()
+        self._watch_sleep()
+        self._later(2000, self._watch_lock)
         self._clock()
         GLib.timeout_add_seconds(1, self._clock)
         print(f"eva-desk: running (Hyprland {'Lua' if self.hypr.lua else 'legacy'} config)", flush=True)
@@ -159,6 +170,8 @@ class App(Gtk.Application):
         self.refresh_id = None
         try:
             self.refresh()
+            if not getattr(self, "boot_done", True):         # the boot is still waiting for a monitor to play on
+                self._boot()
         except Exception:
             traceback.print_exc()
         return False
@@ -211,6 +224,11 @@ class App(Gtk.Application):
                 st.set_berserk(want)
             self.prev = {k: {**v, "scene": None} for k, v in self.prev.items()}   # re-show with the entrance
             self.schedule(0)
+            if want:
+                try:
+                    self._announce_berserk(cpu, mem_pct)
+                except Exception:                            # the sampler's timer must outlive a sequence that fails
+                    traceback.print_exc()
 
     def _mark_urgent(self, address):
         for c in self.hypr.j("clients") or []:
@@ -262,10 +280,12 @@ class App(Gtk.Application):
                 b = Bar(self, gdk[name], name, self.cfg, self.hypr)
                 self.bars[name] = b
                 b.update(clock=time.strftime("%H:%M"), date=time.strftime("%a %d").upper(),
-                         volume=self.volume_state[0], muted=self.volume_state[1], resources=self.res_state,
-                         music=self.music_state, tray=self.tray.visible() if self.tray else [])
+                         volume=self.volume_state[0], muted=self.volume_state[1],
+                         tray=self.tray.visible() if self.tray else [], **self._bar_state("music", "resources"))
                 b.set_visible(True)
         self._sync_frames(gdk)
+        if getattr(self, "motion", None) is not None:
+            self.motion.forget(gdk.values())                 # the players of monitors that went away
 
     def _sync_frames(self, gdk):
         """One window frame per enabled monitor (the side monitor too, not only the mains), keyed
@@ -415,10 +435,13 @@ class App(Gtk.Application):
         for b in self.bars.values():
             b.update(tray=icons)
 
-    def _on_music(self, status, title, artist):
+    def _on_music(self, status, title, artist, now=None):
         self.music_state = {"status": status, "title": title, "artist": artist} if status else None
         for b in self.bars.values():
-            b.update(music=self.music_state)
+            b.update(**self._bar_state("music"))
+        if getattr(self, "tracks", None) is not None:        # a new track gets a card, once its reports have settled
+            self.tracks.feed(status, title, artist, time.monotonic() if now is None else now)
+            self._later(450, self._track_settled)
 
     def _resources(self):
         from .resources import human
@@ -429,12 +452,25 @@ class App(Gtk.Application):
                           "net": s["net"]["kind"], "down": human(s["net"]["down"]),
                           "show": list(self.cfg["bar"]["resources"])}
         for b in self.bars.values():
-            b.update(resources=self.res_state)
-        game = any(class_matches(c.get("class", ""), self.cfg["figures"]["ignore_classes"]) and c.get("fullscreen", 0)
-                   for c in (self.hypr.j("clients") or [])) if self.cfg["overlays"].get("berserk") else False
+            b.update(**self._bar_state("resources"))
+        try:
+            game = any(class_matches(c.get("class", ""), self.cfg["figures"]["ignore_classes"]) and c.get("fullscreen", 0)
+                       for c in (self.hypr.j("clients") or [])) if self.cfg["overlays"].get("berserk") else False
+        except OSError:                                      # Hyprland did not answer: no berserk check this time,
+            game = True                                      # and this timer goes on
         if not game:
             self._berserk_check(s["cpu"], self.res_state["mem_pct"])
         return True
+
+    def _bar_state(self, *what):
+        """What the bars are told of the player and of the load: only what their own switches ask for. The track
+        card and the berserk limit need both sources even when the bar shows neither."""
+        bar, state = self.cfg["bar"], {}
+        if "music" in what and bar["music"]:
+            state["music"] = getattr(self, "music_state", None)
+        if "resources" in what and bar["resources"]:
+            state["resources"] = getattr(self, "res_state", None)
+        return state
 
     def _reshuffle(self):
         if self.walls:
@@ -457,19 +493,204 @@ class App(Gtk.Application):
             return f"{name} disabled"
         return p.open(gdk)
 
+    # ---------------------------------------------------------------- motion: what plays when
+    def _later(self, ms, fn):
+        """Run fn once, ms from now."""
+        GLib.timeout_add(ms, lambda: (fn(), False)[1])
+
+    def _inputs(self, **more):
+        """What any motion piece may show: where and when, the bar's height, and whatever the caller adds."""
+        ws = (self.hypr.j("activeworkspace") or {}).get("id")
+        bar = self.cfg["bar"]
+        return {"workspace": ws if isinstance(ws, int) and ws > 0 else None, "clock": time.strftime("%H:%M"),
+                "bar": int(bar["height"]) if bar["enabled"] else 0, **more}
+
+    def _play(self, piece, gdk_monitor=None, **inputs):
+        """Play a piece on that monitor (the focused one when none is given)."""
+        return self.motion.play(piece, gdk_monitor or self.focused_gdk(), self._inputs(**inputs))
+
+    def _mains_gdk(self, skip=()):
+        """The Gdk monitors of the main monitors, without the ones named in `skip`."""
+        mains = self.main_monitors(self.hypr.j("monitors") or [])
+        return [self.gdk_of[m["name"]] for m in mains if m["name"] in self.gdk_of and m["name"] not in skip]
+
+    def _quiet(self):
+        """Something that covers the screen or holds the keyboard is up: berserk and the track card stay away."""
+        if self._covered() or getattr(getattr(self, "launcher", None), "visible", False):
+            return True
+        overlays = getattr(self, "overlays", {})
+        return any(getattr(overlays.get(name), "visible", False) for name in ("power", "alttab"))
+
+    def _may_announce(self, switch):
+        """Whether berserk or the track card may play at all right now."""
+        if getattr(self, "motion", None) is None or not self.cfg["motion"][switch] or self._quiet():
+            return False
+        return not triggers.game_open(self.hypr.j("clients"), self.cfg["figures"]["ignore_classes"])
+
     def play_launch(self, name, game, gdk_monitor):
         """The launch sequence for a launcher entry: the card for an app, the shaft for a game."""
         if getattr(self, "motion", None) is None or not self.cfg["motion"]["launch"]:
             return False
         from .motion.seq.card import Card
         from .motion.seq.shaft import Shaft
-        return self._play(Shaft() if game else Card(), name, gdk_monitor)
+        return self._play(Shaft() if game else Card(), gdk_monitor, app=name)
 
-    def _play(self, piece, name, gdk_monitor=None):
-        """Play a piece on that monitor (the focused one when none is given), with the inputs it may show."""
-        ws = (self.hypr.j("activeworkspace") or {}).get("id")
-        ctx = {"app": name, "workspace": ws if isinstance(ws, int) and ws > 0 else None, "clock": time.strftime("%H:%M")}
-        return self.motion.play(piece, gdk_monitor or self.focused_gdk(), ctx)
+    def _boot_inputs(self):
+        net = (getattr(self, "res_state", None) or {}).get("net") or "lan"
+        return triggers.boot_inputs(self.hypr.j("monitors"), self.hypr.j("version"), self.hypr.lua, net)
+
+    BOOT_PATIENCE = 20.0       # seconds the boot waits for a main monitor to play on before it gives the session up
+
+    def _boot(self, marker=None, now=None):
+        """The boot sequence on every main monitor, once per Hyprland session. True when it played. `boot_done` says
+        whether the matter is settled: it stays open while no main monitor is known (at login the first refresh can
+        come before the outputs), and the next refresh tries again."""
+        now = time.monotonic() if now is None else now
+        self.boot_done = True
+        signature = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+        marker = Path(marker or Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eva-desk.boot")
+        try:
+            seen = marker.read_text()
+        except OSError:
+            seen = None
+        if not triggers.boot_due(seen, signature):
+            return False
+        targets = []
+        if (getattr(self, "motion", None) is not None and self.cfg["motion"]["boot"]
+                and not triggers.game_open(self.hypr.j("clients"), self.cfg["figures"]["ignore_classes"])):      # never over a game
+            if self._mains_gdk():
+                targets = self._mains_gdk(skip=triggers.fullscreen_monitors(self.hypr.j("monitors"), self.hypr.j("clients")))
+            else:                                            # nothing to play on yet
+                self.boot_until = getattr(self, "boot_until", None) or now + self.BOOT_PATIENCE
+                if now < self.boot_until:
+                    self.boot_done = False
+                    return False
+        try:
+            marker.write_text(signature + "\n")              # the session is marked whether or not the boot played: switching
+        except OSError:                                      # it on later must not play it in the middle of a session
+            pass
+        if not targets:
+            return False
+        from .motion.seq.boot import Boot
+        inputs = self._boot_inputs()
+        return any([self._play(Boot(), gdk, **inputs) for gdk in targets])
+
+    @staticmethod
+    def _load(cpu, mem_pct):
+        """What is hot, for the berserk block: the higher of the two."""
+        cpu, mem = cpu or 0, mem_pct or 0
+        return f"CPU {cpu}%" if cpu >= mem else f"RAM {mem}%"
+
+    def _announce_berserk(self, cpu, mem_pct):
+        """The berserk sequence on every main monitor that shows no fullscreen window. Returns how many it played on."""
+        if not self._may_announce("berserk"):
+            return 0
+        from .motion.seq.berserk import Berserk
+        full = triggers.fullscreen_monitors(self.hypr.j("monitors"), self.hypr.j("clients"))
+        inputs = {"load": self._load(cpu, mem_pct), "seconds": int(self.cfg["overlays"].get("berserk_seconds", 30))}
+        return sum(bool(self._play(Berserk(), gdk, **inputs)) for gdk in self._mains_gdk(skip=full))
+
+    def _track_settled(self, now=None):
+        """A card for the track that has settled, if there is one. A track that settles while something is in the
+        way is not announced later."""
+        tracks = getattr(self, "tracks", None)
+        pair = tracks.settle(time.monotonic() if now is None else now) if tracks is not None else None
+        if tracks is not None and tracks.pending:            # a new track, too soon after the last card: ask again
+            self._later(1000, self._track_settled)
+        if not pair or not self._may_announce("track"):
+            return False
+        mons = self.hypr.j("monitors") or []
+        name = triggers.track_monitor(mons, [m["name"] for m in self.main_monitors(mons)])
+        if name not in self.gdk_of or name in triggers.fullscreen_monitors(mons, self.hypr.j("clients")):
+            return False
+        from .motion.seq.track import Track
+        return bool(self._play(Track(), self.gdk_of[name], title=pair[0], artist=pair[1], corner=self.cfg["motion"]["track_corner"]))
+
+    def lock(self):
+        """Start the lock screen the way it always was started: [power] lock, run by Hyprland. Never refused and
+        never tracked. The wake sequence follows the session's lock state (_watch_lock), not this call."""
+        cmd = self.cfg["power"].get("lock", "")
+        if not cmd:
+            return "no lock command"
+        self.hypr.exec(cmd)
+        return "ok"
+
+    def _locked(self):
+        """Whether Hyprland says the session is locked; None when it does not say."""
+        try:
+            reply = self.hypr.j("locked")
+        except OSError:
+            return None
+        return bool(reply["locked"]) if isinstance(reply, dict) and "locked" in reply else None
+
+    def _watch_lock(self, now=None):
+        """Look whether the session is locked, and look again: every two seconds, twice a second while the cover is
+        up. When the session is locked, however that came about, the wake sequence goes up under the lock screen,
+        held on its first frame, so that the lock screen fades onto that cover and not onto the desk; when it
+        unlocks, the sequence plays. The daemon only watches: it never starts, stops or waits on a locker here.
+        Nothing may end this watch or leave the cover up, so every failure takes the cover down and looks again."""
+        if getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
+            return
+        watch = self.lock_watch
+        try:
+            locked = self._locked()
+            verdict = watch.tick(time.monotonic() if now is None else now, locked)
+            if verdict in ("cover", "hold") and locked:      # a cover on every main monitor, one that came back included
+                from .motion.seq.wake import Wake
+                for gdk in self._mains_gdk():
+                    if getattr(self.motion.playing(gdk), "name", None) != "wake":
+                        self.motion.play(Wake(), gdk, {}, held=True)
+            elif verdict == "play":
+                self.motion.start()
+            elif verdict == "drop":
+                self.motion.stop("wake")
+        except Exception as e:
+            print(f"eva-desk: wake: {e}", flush=True)
+            watch.covered = False
+            try:
+                self.motion.stop("wake")
+            except Exception:
+                traceback.print_exc()
+        finally:
+            self._later(500 if watch.covered else 2000, self._watch_lock)
+
+    def _on_sleep(self, sleeping):
+        """logind's PrepareForSleep: True before the machine sleeps, False when it is back."""
+        if sleeping or getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
+            return
+        if self.lock_watch.covered or self._locked():        # back onto a lock screen: its closing plays the sequence
+            return
+        from .motion.seq.wake import Wake
+        for gdk in self._mains_gdk():
+            self._play(Wake(), gdk)
+
+    def _watch_sleep(self):
+        """Hear logind say the machine is back from sleep."""
+        if getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
+            return
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            bus.set_exit_on_close(False)                     # the system bus going away must not take the daemon with it
+            bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
+                                 "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE,
+                                 lambda conn, sender, path, iface, signal, params: self._on_sleep(bool(params.unpack()[0])))
+            self.system_bus = bus
+        except GLib.Error:
+            print("eva-desk: no system bus: no wake sequence after sleep", flush=True)
+
+    def _trial(self, name, text):
+        """The inputs `eva-ctl play NAME [TEXT]` shows a piece with."""
+        if name == "boot":
+            return self._boot_inputs()
+        if name == "berserk":
+            res = getattr(self, "res_state", None)
+            return {"load": self._load(res["cpu"], res["mem_pct"]) if res else "CPU 97%",
+                    "seconds": int(self.cfg["overlays"].get("berserk_seconds", 30))}
+        if name == "track":
+            music = getattr(self, "music_state", None) or {}
+            return {"title": text or music.get("title") or "TITLE", "artist": music.get("artist") or "ARTIST",
+                    "corner": self.cfg["motion"]["track_corner"]}
+        return {"app": text or "EVA-DESK"}
 
     def close_panels(self, except_name=None):
         for name, p in list(getattr(self, "panels", {}).items()):
@@ -534,8 +755,10 @@ class App(Gtk.Application):
                 return f"unknown piece: {args[0]} ({', '.join(names)})"
             if getattr(self, "motion", None) is None:
                 return "motion is not available"
-            self._play(names[args[0]](), " ".join(args[1:]) or "EVA-DESK")
+            self._play(names[args[0]](), **self._trial(args[0], " ".join(args[1:])))
             return "ok"
+        if cmd == "lock":                                  # the lock screen, started so that the wake sequence can follow it
+            return self.lock()
         if cmd == "eyecatch":
             o = self.overlays.get("eyecatch")
             if not o:

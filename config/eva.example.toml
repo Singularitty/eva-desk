@@ -117,6 +117,12 @@ search_url = "https://duckduckgo.com/?q={}"
 [motion]                  # sequences the daemon plays when something happens
 launch = true             # Enter in the launcher plays one while the entry opens: a title card for an app, a launch
                           # shaft for a game. A click skips it; Shift+Enter launches without it
+boot = true               # once per Hyprland session, when the desk first comes up
+wake = true               # when the lock screen closes, and after sleep
+berserk = true            # when CPU or memory stays at or over the limit ([overlays] berserk = 90, for berserk_seconds = 30):
+                          # hazard strips on the edges of the screen, never in your way
+track = true              # a card in a corner when a new track starts playing (playerctl; the players of [bar] music_players)
+track_corner = "bottom-left"   # or "bottom-right"
 
 [hyprland]
 maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -351,6 +352,89 @@ class KitTest(unittest.TestCase):
         self.assertEqual(alpha(f, 860, 360), 0)
         self.assertGreater(alpha(f, 860 - 200, 360), 100)
 
+    def test_tile_repeats_what_is_painted_in_one_cell(self):
+        from eva_desk import draw as d
+
+        def dots(k):
+            with k.tile(100, 100, 80, 2, 8, 2):                   # ten dots, 8 px apart
+                k.rect(100, 100, 2, 2, d.BONE)
+        f = self.frame(dots)
+        self.assertEqual([alpha(f, x, 101) > 0 for x in (101, 105, 109, 173, 177, 181)], [True, False, True, True, False, False])
+        f = self.frame(lambda k: k.scanlines(0, 0, 400, 300, 0.5))
+        self.assertEqual([alpha(f, 50, y) > 0 for y in range(6)], [True, False, False, True, False, False])
+        self.assertEqual((alpha(f, 399, 0) > 0, alpha(f, 401, 0), alpha(f, 50, 300)), (True, 0, 0))
+        self.assertEqual(pink(f), 0)
+
+    def test_hexagon_is_a_picture_of_an_outline(self):
+        from eva_desk import draw as d
+        from eva_desk.motion import Piece, render
+
+        class P(Piece):
+            length = 1.0
+
+            def __init__(self, fill):
+                self.fill = fill
+
+            def paint(self, kit, t, ctx):
+                kit.hexagon(400, 300, 58, d.CLARET, width=2, fill=self.fill)
+                kit.hexagon(600, 300, 58, d.CLARET, alpha=0.5, width=2, fill=self.fill)
+
+        def lit(f, x, y):                                          # the strongest of the pixels around a point
+            return max(alpha(f, x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+        f = render.frame(P(0.0), 0, 1720, 720, {})
+        self.assertGreater(lit(f, 400, 242), 150)                  # a point at the top: 58 above the centre
+        self.assertGreater(lit(f, 450, 300), 150)                  # a flat side: 58 * cos 30 = 50.2 out
+        self.assertEqual((alpha(f, 400, 300), alpha(f, 470, 300)), (0, 0))     # hollow, and nothing outside
+        self.assertTrue(60 < lit(f, 650, 300) < 140)               # the second one at half strength
+        g = render.frame(P(0.4), 0, 1720, 720, {})
+        self.assertTrue(80 < alpha(g, 400, 300) < 125)             # filled at 0.4 of its line
+        widths = texture_widths(render.build(P(0.0), 0, 1720, 720, {}))
+        self.assertEqual((len(widths), len(set(widths))), (2, 1))  # pictures of one picture: no path for GTK to rasterise every frame
+
+    def test_hex_cells_cover_a_box(self):
+        from eva_desk.motion.kit import hex_cells
+        cells = hex_cells(0, 0, 1000, 500, 58)
+        dx, dy, rows = math.sqrt(3) * 58, 1.5 * 58, {}
+        for cx, cy, col, row in cells:
+            rows.setdefault(row, []).append(cx)
+            self.assertAlmostEqual(cy, row * dy)
+        self.assertAlmostEqual(rows[0][1] - rows[0][0], dx)                    # neighbours are one cell apart
+        self.assertAlmostEqual((rows[1][0] - rows[0][0]) % dx, dx / 2)         # every other row sits half a cell over
+        self.assertTrue(min(c[0] for c in cells) <= 0 and max(c[0] for c in cells) >= 1000)     # past every edge of the box
+        self.assertTrue(min(c[1] for c in cells) <= 0 and max(c[1] for c in cells) >= 500)
+        self.assertEqual(len(cells), len(set(cells)))
+        self.assertAlmostEqual(hex_cells(0, 0, 10, 10, 58, ox=7, oy=5)[0][1] % dy, 5)           # the lattice can be shifted
+
+    def test_lamp_brackets_and_block(self):
+        from eva_desk import draw as d
+        f = self.frame(lambda k: (k.lamp(100, 100, 10, d.GOLD), k.brackets(300, 100, 500, 300, 30, d.BONE, 4),
+                                  k.block(600, 100, 200, 100, d.LED, shadow=d.BONE, off=8)))
+        self.assertEqual(px(f, 105, 105), GOLD + (255,))                       # the lamp
+        self.assertTrue(20 < alpha(f, 98, 105) < 90)                           # its halo, 3 px out
+        self.assertEqual(alpha(f, 95, 105), 0)
+        self.assertEqual((alpha(f, 310, 101), alpha(f, 301, 120), alpha(f, 340, 101), alpha(f, 400, 200)), (255, 255, 0, 0))     # a corner: two legs of 30
+        self.assertEqual((alpha(f, 490, 299), alpha(f, 499, 280)), (255, 255))                                                 # and the opposite one
+        self.assertEqual((px(f, 804, 150)[:3], px(f, 700, 204)[:3]), (BONE, BONE))                                             # the hard shadow, right and under
+        self.assertNotEqual(px(f, 700, 150)[:3], BONE)
+
+    def test_type_can_be_cut_to_a_width(self):
+        from eva_desk import draw as d
+        long, got = "A VERY LONG TITLE THAT CANNOT FIT IN THE CARD AT ALL", {}
+
+        def fn(k):
+            got["full"] = k.measure(long, 38, face="display")
+            got["cut"] = k.measure(long, 38, face="display", width=300)
+            got["short"] = (k.measure("EVA", 38, face="display"), k.measure("EVA", 38, face="display", width=300))
+            got["drawn"] = k.text(long, 100, 300, 38, d.BONE, face="display", width=300)
+            k.text("مرحبا بالعالم " * 6, 100, 500, 38, d.BONE, face="display", width=300)
+        f = self.frame(fn)
+        self.assertGreater(got["full"], 600)
+        self.assertTrue(200 < got["cut"] <= 300)
+        self.assertEqual(got["short"][0], got["short"][1])                     # what fits is left alone
+        self.assertEqual(got["drawn"], got["cut"])
+        for rows in (range(250, 320, 3), range(450, 520, 3)):                  # nothing past the width, in either script
+            self.assertFalse(any(alpha(f, x, y) for x in range(404, 900, 3) for y in rows))
+
     def test_plain_layout_and_available(self):
         from eva_desk import draw as d, motion
         ink, logical = d.plain_layout("EVA", d.F_META, 20, spacing=2).get_pixel_extents()
@@ -571,8 +655,8 @@ class ShaftTest(unittest.TestCase):
 class RenderTest(unittest.TestCase):
     def test_registry(self):
         from eva_desk import motion
-        self.assertEqual(sorted(motion.pieces()), ["card", "shaft"])
-        self.assertEqual({n: p().name for n, p in motion.pieces().items()}, {"card": "card", "shaft": "shaft"})
+        self.assertEqual(list(motion.pieces()), ["card", "shaft", "boot", "wake", "berserk", "track"])
+        self.assertEqual({n: p().name for n, p in motion.pieces().items()}, {n: n for n in motion.pieces()})
 
     def test_parse_size(self):
         from eva_desk.motion import render
@@ -613,33 +697,33 @@ class RenderTest(unittest.TestCase):
         for name, cls in pieces().items():
             piece, sizes = cls(), set()
             for i in range(120):
-                node = render.build(piece, piece.length * (i + 0.5) / 120, 1720, 720, CTX)
+                node = render.build(piece, piece.length * (i + 0.5) / 120, 1720, 720, render.fixture_ctx())
                 sizes |= glyph_sizes(node) if node is not None else set()
-            self.assertLessEqual(len(sizes), 8, (name, sorted(sizes)))
+            self.assertTrue(0 < len(sizes) <= 8, (name, sorted(sizes)))       # every piece sets some type, with all its inputs given
 
     def test_prepare_makes_the_stamps_before_the_first_frame(self):
         from eva_desk import gtkutil  # noqa: F401
         from gi.repository import Gtk
-        from eva_desk.motion import pieces
+        from eva_desk.motion import pieces, render
         from eva_desk.motion.kit import Kit
         for name, cls in pieces().items():
-            piece, store = cls(), {}
+            piece, store, ctx = cls(), {}, render.fixture_ctx()
             kit = Kit(Gtk.Snapshot(), 1720, 720, 1, store)
-            piece.prepare(kit, CTX)
+            piece.prepare(kit, ctx)
             kit.close()
             made = len(store)
-            self.assertGreater(made, 0, name)
+            self.assertEqual(made > 0, name in ("card", "shaft", "boot", "berserk"), name)       # the pieces whose type changes size, or that tile hexagons
             for i in range(60):
                 kit = Kit(Gtk.Snapshot(), 1720, 720, 1, store)
-                piece.draw(kit, piece.length * (i + 0.5) / 60, CTX)
+                piece.draw(kit, piece.length * (i + 0.5) / 60, ctx)
                 kit.close()
             self.assertEqual(len(store), made, name)                          # no frame had to make one
 
     def test_stills_for_the_standing_render(self):
-        from eva_desk import preview
+        from eva_desk import motion, preview
         with tempfile.TemporaryDirectory() as tmp:
             out = preview.motion_stills(tmp, 640, 360)
-            self.assertEqual(sorted(p.name for p in out), ["motion_card.png", "motion_shaft.png"])
+            self.assertEqual(sorted(p.name for p in out), sorted(f"motion_{n}.png" for n in motion.pieces()))
 
     def test_command_line(self):
         env = dict(os.environ, WAYLAND_DISPLAY="eva-none", PYTHONPATH=str(ROOT))
@@ -653,6 +737,408 @@ class RenderTest(unittest.TestCase):
                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
             self.assertEqual(r.returncode, 2)
             self.assertIn("card, shaft", r.stdout + r.stderr)
+
+
+class BootTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import render
+        from eva_desk.motion.seq.boot import Boot
+        self.render, self.boot = render, Boot()
+
+    def at(self, t, w=1720, h=720, **ctx):
+        return self.render.frame(self.boot, t, w, h, dict(self.render.fixture_ctx(), **ctx))
+
+    def test_identity(self):
+        self.assertEqual((self.boot.name, self.boot.length, self.boot.covers), ("boot", 2.6, True))
+
+    def test_it_covers_the_desk_until_the_gate_opens(self):
+        for t in (0.0, 0.5, 1.2, 1.94):
+            self.assertEqual(set(grid(self.at(t))), {255}, t)
+
+    def test_the_lines_carry_what_is_read_live(self):
+        from eva_desk.motion.seq import boot
+        got = boot.lines({"outputs": ["3440×1440", "1080×1920"], "hyprland": "0.56", "lua": True, "net": "wifi"})
+        self.assertEqual(len(got), 6)
+        self.assertEqual(got[0], ("EVA-DESK ・ 起動シーケンス", None))
+        self.assertEqual(got[3], ("MAGI-3  CASPER     WIFI", "OK"))
+        self.assertEqual(got[4], ("OUTPUT  3440×1440 ・ 1080×1920", "2 UP"))
+        self.assertEqual(got[5], ("HYPRLAND 0.56 ・ LUA", "LINKED"))
+        bare = boot.lines({})
+        self.assertEqual((bare[3], bare[4], bare[5]), (("MAGI-3  CASPER     LAN", "OK"), ("OUTPUT  NONE", "0 UP"), ("HYPRLAND  ・ LUA", "LINKED")))
+        self.assertEqual(boot.lines({"net": "none", "lua": False, "outputs": ["a", "b", "c", "d"]})[3:],
+                         [("MAGI-3  CASPER     NONE", "DOWN"), ("OUTPUT  a ・ b ・ c", "4 UP"), ("HYPRLAND  ・ LEGACY", "LINKED")])
+
+    def test_the_field_and_the_bar_run_on_twos(self):
+        self.assertTrue(same(self.at(0.84), self.at(0.90)))                    # the same twelfth of a second: the same picture
+        self.assertFalse(same(self.at(0.90), self.at(0.93)))
+
+    def test_the_gate_opens_along_the_seam(self):
+        from eva_desk import draw as d
+        claret = tuple(round(255 * c) for c in d.CLARET[2::-1])
+        self.assertEqual(px(self.at(1.96), 860, 446)[:3], BONE)                # the seam is marked for a moment
+        f = self.at(2.15)                                                      # half open
+        self.assertEqual((alpha(f, 860, 100), alpha(f, 860, 400), alpha(f, 860, 660)), (255, 0, 255))
+        for y in (210, 596):                                                   # a hazard edge on each part, along the cut
+            self.assertTrue(any(px(f, x, y)[:3] == claret for x in range(0, 1720, 3)), y)
+
+    def test_it_ends_on_the_desk_under_brackets_and_a_tag(self):
+        f = self.at(2.5)
+        self.assertEqual(alpha(f, 860, 360), 0)
+        self.assertEqual(px(f, 20, 38), BONE + (255,))                         # a bracket at the top left, under the bar
+        self.assertEqual(px(f, 1690, 60)[:3], GOLD)                            # the tag, in its padding
+        self.assertEqual((alpha(self.at(2.59), 20, 38), alpha(self.at(2.59), 1690, 60)), (0, 0))      # they hold to 2.58
+        self.assertEqual(set(grid(self.at(2.6))), {0})
+
+    def test_the_gate_draws_each_cell_once(self):
+        from gi.repository import Gsk
+
+        def count(t, kind):
+            return sum(n.get_node_type() == kind for n, _ in nodes(self.render.build(self.boot, t, 1720, 720, self.render.fixture_ctx())))
+        whole, split = count(1.9, Gsk.RenderNodeType.TEXTURE_NODE), count(2.1, Gsk.RenderNodeType.TEXTURE_NODE)
+        self.assertGreater(whole, 100)
+        self.assertLessEqual(split, whole + 30)                                # the two parts share only the cells on the seam
+        self.assertLessEqual(count(1.9, Gsk.RenderNodeType.OPACITY_NODE), 2)   # no cell under an opacity of its own: its strength is in its picture
+
+    def test_never_a_bright_screen(self):
+        points = [(x, y) for y in range(10, 720, 20) for x in range(10, 1720, 20)]
+        for t in (0.3, 1.0, 1.5, 1.9, 2.2):
+            f = self.at(t)
+            bright = sum(1 for x, y in points if alpha(f, x, y) and min(px(f, x, y)[:3]) > 200)
+            self.assertLess(bright / len(points), 0.2, t)
+
+    def test_nothing_the_offline_renderer_cannot_draw(self):
+        for t in (0.1, 0.6, 1.0, 1.3, 1.6, 2.1, 2.4):
+            self.assertEqual(pink(self.at(t)), 0, t)
+
+    def test_other_monitor_shapes_and_missing_inputs(self):
+        for w, h in ((3440, 1440), (1080, 1920), (640, 360)):
+            self.assertEqual(set(grid(self.at(1.0, w, h))), {255}, (w, h))
+        tall = self.at(1.9, 1080, 1920)                                        # the gate opens through the digits on any frame
+        self.assertTrue(any(px(tall, x, round(0.62 * 1920))[:3] == BONE for x in range(0, 1080, 2)))
+        self.at(1.0, outputs=[], hyprland="", net="none", bar=0)
+        self.render.frame(self.boot, 1.0, 1720, 720, {})
+
+    def test_same_frame_twice(self):
+        self.assertTrue(same(self.at(1.234), self.at(1.234)))
+
+
+class WakeTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import render
+        from eva_desk.motion.seq.wake import Wake
+        self.render, self.wake = render, Wake()
+
+    def at(self, t, w=1720, h=720):
+        return self.render.frame(self.wake, t, w, h, self.render.fixture_ctx())
+
+    def test_identity(self):
+        self.assertEqual((self.wake.name, self.wake.length, self.wake.covers), ("wake", 1.1, True))
+
+    def test_it_covers_the_desk_from_its_first_frame(self):
+        for t in (0.0, 0.3, 0.7, 0.84):                                        # held under a lock screen, it is frame 0 that shows
+            self.assertEqual(set(grid(self.at(t))), {255}, t)
+
+    def test_two_waves_close_on_each_other(self):
+        def rows(t):                                                           # how many rows of the graph the gold wave reaches
+            f = self.at(t)
+            return sum(any(near(px(f, x, y), GOLD) for x in range(64, 1656, 4)) for y in range(250, 470))
+        early, late = rows(0.2), rows(0.55)
+        self.assertGreater(late, 0)
+        self.assertGreater(early, 3 * late)
+
+    def test_they_lock_into_one_bone_line_and_a_plate(self):
+        f = self.at(0.7)
+        self.assertEqual(px(f, 860, 360)[:3], BONE)
+        self.assertEqual(px(f, 70, 500)[:3], BONE)                             # the plate, in its padding
+        self.assertNotEqual(px(self.at(0.6), 70, 500)[:3], BONE)
+
+    def test_the_cover_folds_to_a_line_and_the_line_closes(self):
+        f = self.at(0.86)                                                      # the first of three steps
+        self.assertEqual((alpha(f, 860, 50), alpha(f, 860, 360), alpha(f, 860, 680)), (0, 255, 0))
+        f = self.at(1.0)                                                       # a bone line across the middle
+        self.assertEqual((px(f, 860, 360), alpha(f, 860, 300)), (BONE + (255,), 0))
+        f = self.at(1.06)                                                      # closing on the centre
+        self.assertEqual((alpha(f, 200, 360), alpha(f, 860, 360)), (0, 255))
+        for t in (1.08, 1.09, 1.1):
+            self.assertEqual(set(grid(self.at(t))), {0}, t)
+
+    def test_never_a_bright_screen(self):
+        points = [(x, y) for y in range(10, 720, 20) for x in range(10, 1720, 20)]
+        for t in (0.1, 0.4, 0.7, 0.9, 1.0):
+            f = self.at(t)
+            bright = sum(1 for x, y in points if alpha(f, x, y) and min(px(f, x, y)[:3]) > 200)
+            self.assertLess(bright / len(points), 0.2, t)
+
+    def test_nothing_the_offline_renderer_cannot_draw(self):
+        for t in (0.0, 0.1, 0.3, 0.6, 0.7, 0.9, 1.0):
+            self.assertEqual(pink(self.at(t)), 0, t)
+
+    def test_other_monitor_shapes(self):
+        for w, h in ((3440, 1440), (1080, 1920), (640, 360)):
+            self.assertEqual(set(grid(self.at(0.5, w, h))), {255}, (w, h))
+            self.assertEqual(set(grid(self.at(1.09, w, h))), {0}, (w, h))
+        self.render.frame(self.wake, 0.5, 1720, 720, {})
+
+    def test_same_frame_twice(self):
+        self.assertTrue(same(self.at(0.4321), self.at(0.4321)))
+
+
+class BerserkTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk import draw as d
+        from eva_desk.motion import render
+        from eva_desk.motion.seq.berserk import Berserk
+        self.render, self.berserk = render, Berserk()
+        self.led = tuple(round(255 * c) for c in d.LED[2::-1])
+
+    def at(self, t, w=1720, h=720, **ctx):
+        return self.render.frame(self.berserk, t, w, h, dict(self.render.fixture_ctx(), **ctx))
+
+    def test_identity(self):
+        b = self.berserk
+        self.assertEqual((b.name, b.length, b.covers, b.rank), ("berserk", 1.3, False, 1))
+
+    def test_the_edges_only(self):
+        for t in (0.1, 0.3, 0.6, 0.9, 1.1, 1.25):
+            f = self.at(t)
+            self.assertEqual((alpha(f, 860, 360), alpha(f, 860, 200), alpha(f, 1200, 500)), (0, 0, 0), t)
+
+    def test_strips_run_in_from_opposite_sides(self):
+        f = self.at(0.05)
+        self.assertEqual((alpha(f, 100, 39), alpha(f, 1600, 39)), (255, 0))    # under the bar, from the left
+        self.assertEqual((alpha(f, 1600, 712), alpha(f, 100, 712)), (255, 0))  # along the floor, from the right
+        f = self.at(0.6)
+        for y in (39, 712):
+            row = [px(f, x, y) for x in range(0, 1720, 2)]
+            self.assertTrue(all(p[3] == 255 for p in row), y)
+            self.assertTrue({self.led, INK} <= {p[:3] for p in row}, y)        # orange on ink
+        self.assertEqual((px(f, 1, 300)[:3], px(f, 1718, 400)[:3]), (self.led, self.led))       # and a line down each side
+        self.assertFalse(same(self.at(0.6), self.at(0.7)))                     # the strips crawl while they are up
+
+    def test_the_block_slams_in_at_the_lower_left(self):
+        f = self.at(0.7)
+        self.assertEqual(px(f, 330, 510)[:3], self.led)                        # the slab, clear of its type
+        self.assertEqual((px(f, 344, 600)[:3], px(f, 200, 674)[:3]), (BONE, BONE))               # its hard shadow, right and under
+        self.assertEqual(alpha(self.at(0.15), 200, 600), 0)                    # not before 0.18
+        self.assertEqual(alpha(self.at(1.1), 200, 600), 0)                     # and closed again by 1.07
+
+    def test_the_line_says_what_is_hot(self):
+        self.assertFalse(same(self.at(0.8), self.at(0.8, load="RAM 91%")))
+        self.assertFalse(same(self.at(0.8), self.at(0.8, seconds=5)))
+        self.assertFalse(same(self.at(0.8), self.at(0.8, seconds=0)))          # a limit of no seconds reads 0 S, not the default
+        self.assertTrue(same(self.at(0.3), self.at(0.3, load="RAM 91%")))      # it types on from 0.40
+
+    def test_the_top_strip_sits_under_the_bar(self):
+        self.assertEqual(alpha(self.at(0.6), 860, 10), 0)                      # no bar named: 28 design px of it
+        self.assertEqual(alpha(self.at(0.6, bar=0), 860, 10), 255)             # no bar: at the top of the screen
+        self.assertEqual(alpha(self.at(0.6, 3440, 1440, bar=56), 1720, 78), 255)                 # 56 px of bar on the wide monitor
+
+    def test_it_leaves_the_way_it_came(self):
+        for t in (1.29, 1.3):
+            self.assertEqual(set(grid(self.at(t))), {0}, t)
+
+    def test_nothing_the_offline_renderer_cannot_draw(self):
+        for t in (0.05, 0.2, 0.3, 0.5, 0.8, 1.0, 1.2):
+            self.assertEqual(pink(self.at(t)), 0, t)
+
+    def test_other_monitor_shapes_and_missing_inputs(self):
+        for w, h in ((3440, 1440), (1080, 1920), (640, 360)):
+            f = self.at(0.6, w, h)
+            self.assertEqual((alpha(f, w // 2, h // 2), alpha(f, w // 2, h - 3)), (0, 255), (w, h))
+        self.render.frame(self.berserk, 0.6, 1720, 720, {})
+        self.at(0.6, load="", seconds=None)
+
+    def test_same_frame_twice(self):
+        self.assertTrue(same(self.at(0.777), self.at(0.777)))
+
+
+class TrackTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import render
+        from eva_desk.motion.seq.track import Track
+        self.render, self.track = render, Track()
+
+    def at(self, t, w=1720, h=720, **ctx):
+        return self.render.frame(self.track, t, w, h, dict(self.render.fixture_ctx(), **ctx))
+
+    def test_identity(self):
+        k = self.track
+        self.assertEqual((k.name, k.length, k.covers, k.rank), ("track", 1.6, False, 0))
+
+    def test_a_card_in_the_lower_left_corner(self):
+        x0, y0, x1, y1 = box(self.at(0.8))
+        self.assertEqual((x0, y0, y1), (44, 538, 662))                         # the tag's top; the shadow's foot
+        self.assertTrue(320 <= x1 - 50 <= 640)                                 # the slab, and 7 px of shadow
+        self.assertEqual(alpha(self.at(0.8), 860, 360), 0)
+        self.assertEqual(box(self.at(0.8, corner="bottom-right"))[2], 1682)    # or the lower right, 44 px from the side
+
+    def test_the_card_is_as_wide_as_its_type_within_limits(self):
+        self.assertEqual(box(self.at(0.8, title="A", artist="B"))[2], 370)     # never under 320
+        f = self.at(0.8, title="X" * 300, artist="Y" * 300)
+        self.assertEqual(box(f)[2], 690)                                       # never over 640
+        self.assertFalse(any(px(f, x, y)[:3] == BONE for x in range(664, 684) for y in range(570, 620)))     # cut inside its padding, not run off the edge
+
+    def test_no_artist_no_lower_slab(self):
+        self.assertEqual(box(self.at(0.8, artist=""))[3], 630)                 # the title slab's own shadow, and nothing under it
+
+    def test_it_holds_still(self):
+        self.assertTrue(same(self.at(0.6), self.at(1.1)))                      # nothing reacts to the music
+        self.assertFalse(same(self.at(0.8), self.at(0.8, title="Other")))
+        self.assertFalse(same(self.at(0.8), self.at(0.8, artist="Other")))
+
+    def test_it_comes_out_of_a_rule_and_goes_back_into_it(self):
+        for t in (0.05, 1.5):
+            x0, y0, x1, y1 = box(self.at(t))
+            self.assertLessEqual(y1 - y0, 3, t)                                # only the rule
+        self.assertEqual(set(grid(self.at(1.6))), {0})
+
+    def test_odd_titles(self):
+        for title in ("مرحبا بالعالم", "🦊🦊🦊", "火狐", "X" * 300):
+            for t in (0.3, 0.8, 1.3):
+                self.at(t, title=title, artist=title)
+        self.assertIsNone(box(self.at(0.8, title="")))                         # nothing to announce: nothing painted
+        self.render.frame(self.track, 0.8, 1720, 720, {})
+
+    def test_nothing_the_offline_renderer_cannot_draw(self):
+        for t in (0.05, 0.2, 0.4, 0.8, 1.3, 1.5):
+            self.assertEqual(pink(self.at(t)), 0, t)
+
+    def test_other_monitor_shapes(self):
+        self.assertEqual(box(self.at(0.8, 3440, 1440))[0], 88)
+        for w, h in ((1080, 1920), (640, 360)):
+            x0, y0, x1, y1 = box(self.at(0.8, w, h))
+            self.assertTrue(0 < x0 and x1 < w and h / 2 < y0 and y1 < h, (w, h))
+
+    def test_same_frame_twice(self):
+        self.assertTrue(same(self.at(0.3333), self.at(0.3333)))
+
+
+class TriggersTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import triggers
+        self.T = triggers
+
+    def test_boot_once_per_hyprland_session(self):
+        T = self.T
+        self.assertTrue(T.boot_due(None, "abc"))
+        self.assertTrue(T.boot_due("another\n", "abc"))
+        self.assertFalse(T.boot_due("abc\n", "abc"))
+        self.assertFalse(T.boot_due(None, ""))                                 # not under Hyprland: nothing to boot into
+
+    def test_boot_inputs(self):
+        T = self.T
+        mons = [{"width": 3440, "height": 1440}, {"width": 1080, "height": 1920, "disabled": True}, {"width": 1920, "height": 1080}]
+        self.assertEqual(T.boot_inputs(mons, {"version": "0.56.0"}, True, "wifi"),
+                         {"outputs": ["3440×1440", "1920×1080"], "hyprland": "0.56", "lua": True, "net": "wifi"})
+        self.assertEqual(T.boot_inputs([], {"tag": "v0.57.1-12-gabc"}, False, None)["hyprland"], "0.57")
+        self.assertEqual(T.boot_inputs(None, None, True, "lan"), {"outputs": [], "hyprland": "", "lua": True, "net": "lan"})
+        self.assertEqual(T.boot_inputs([], {"version": "git"}, True, "lan")["hyprland"], "git")
+
+    def test_a_game_is_open_wherever_its_window_is(self):
+        T, pats = self.T, ["^steam_app_", "^gamescope$"]
+        self.assertFalse(T.game_open([{"class": "kitty"}], pats))
+        self.assertTrue(T.game_open([{"class": "kitty"}, {"class": "steam_app_42", "hidden": True, "workspace": {"id": 9}}], pats))
+        self.assertFalse(T.game_open([], pats))
+        self.assertFalse(T.game_open(None, pats))
+
+    def test_fullscreen_monitors(self):
+        T = self.T
+        mons = [{"id": 0, "name": "DP-1", "activeWorkspace": {"id": 1}, "specialWorkspace": {"id": 0}},
+                {"id": 1, "name": "DP-2", "activeWorkspace": {"id": 5}, "specialWorkspace": {"id": -98}}]
+
+        def win(ws, fs, **more):
+            return dict({"workspace": {"id": ws}, "fullscreen": fs, "mapped": True}, **more)
+        self.assertEqual(T.fullscreen_monitors(mons, [win(1, 2)]), {"DP-1"})
+        self.assertEqual(T.fullscreen_monitors(mons, [win(1, 1)]), set())      # maximised is not fullscreen
+        self.assertEqual(T.fullscreen_monitors(mons, [win(2, 2)]), set())      # on a workspace that is not showing
+        self.assertEqual(T.fullscreen_monitors(mons, [win(1, 2, hidden=True)]), set())
+        self.assertEqual(T.fullscreen_monitors(mons, [win(-98, 2), win(1, 0)]), {"DP-2"})        # on the open special workspace
+        self.assertEqual(T.fullscreen_monitors(None, None), set())
+
+    def test_track_monitor(self):
+        T = self.T
+        mons = [{"name": "DP-1", "focused": False}, {"name": "DP-2", "focused": True}]
+        self.assertEqual(T.track_monitor(mons, ["DP-1"]), "DP-1")              # the focused one is not a main monitor
+        self.assertEqual(T.track_monitor(mons, ["DP-1", "DP-2"]), "DP-2")
+        self.assertEqual(T.track_monitor(mons, ["GONE", "DP-1"]), "DP-1")
+        self.assertIsNone(T.track_monitor(mons, []))
+        self.assertIsNone(T.track_monitor(None, ["DP-1"]))
+
+    def test_what_may_take_the_place_of_what(self):
+        T = self.T
+
+        def piece(covers, rank=0):
+            return types.SimpleNamespace(covers=covers, rank=rank)
+        card, berserk, track = piece(True), piece(False, 1), piece(False, 0)
+        for new, old, may in ((card, card, True), (card, berserk, True), (card, track, True), (berserk, track, True),
+                              (berserk, berserk, True), (track, track, True), (track, berserk, False),
+                              (berserk, card, False), (track, card, False)):
+            self.assertEqual(T.outranks(new, old), may)
+
+    def test_track_changes(self):
+        w = self.T.TrackWatch(100.0)
+        w.feed("Playing", "A", "X", 100.2)                                     # what was playing when the daemon came up
+        self.assertIsNone(w.settle(101.0))                                     # is noted, not announced
+        w.feed("Playing", "B", "", 110.0)                                      # a new title; its artist arrives a moment later
+        w.feed("Playing", "B", "Y", 110.1)
+        self.assertIsNone(w.settle(110.3))                                     # not settled yet
+        self.assertEqual(w.settle(110.6), ("B", "Y"))
+        self.assertIsNone(w.settle(111.0))                                     # once
+        w.feed("Paused", "B", "Y", 120.0)
+        w.feed("Playing", "B", "Y", 125.0)
+        self.assertIsNone(w.settle(126.0))                                     # the same track, resumed
+        w.feed("Paused", "C", "Z", 130.0)
+        self.assertIsNone(w.settle(131.0))                                     # a new title, but nothing plays
+        w.feed("Playing", "C", "Z", 140.0)
+        self.assertEqual(w.settle(140.5), ("C", "Z"))
+        w.feed("", "", "", 150.0)                                              # the player went away and came back on the same track
+        w.feed("Playing", "C", "Z", 155.0)
+        self.assertIsNone(w.settle(156.0))
+        late = self.T.TrackWatch(0.0)
+        self.assertIsNone(late.settle(30.0))                                   # nothing reported yet
+        late.feed("Playing", "A", "X", 60.0)                                   # nothing was playing at the start: the first track is announced
+        self.assertEqual(late.settle(60.5), ("A", "X"))
+
+    def test_a_card_is_not_repeated_or_rushed(self):
+        w = self.T.TrackWatch(0.0)
+        w.begin(5.0)                                                           # the player's reports start here, not when the daemon did
+        w.feed("Playing", "A", "X", 6.0)
+        self.assertIsNone(w.settle(7.0))                                       # so this is still the track that was already playing
+        w.feed("Playing", "D", "", 200.0)
+        self.assertEqual(w.settle(200.5), ("D", ""))
+        w.feed("Playing", "D", "Z", 200.6)                                     # its artist arrives late: the same track, no second card
+        self.assertIsNone(w.settle(201.1))
+        self.assertFalse(w.pending)
+        w.feed("Playing", "E", "Z", 203.0)                                     # the next track, three seconds after a card
+        self.assertIsNone(w.settle(203.5))
+        self.assertTrue(w.pending)                                             # it waits for the gap, and the caller asks again
+        self.assertIsNone(w.settle(209.0))
+        self.assertEqual(w.settle(210.6), ("E", "Z"))                          # ten seconds after the last card
+        self.assertFalse(w.pending)
+        w.feed("Playing", "D", "Z", 230.0)                                     # another player cut in, and now the earlier track is back
+        self.assertIsNone(w.settle(230.5))                                     # announced two minutes ago or less: not again
+        self.assertFalse(w.pending)
+        w.feed("Playing", "E", "Z", 231.0)
+        self.assertIsNone(w.settle(231.5))                                     # nor the one before it
+        w.feed("Playing", "D", "Z", 400.0)                                     # much later it is news again
+        self.assertEqual(w.settle(400.5), ("D", "Z"))
+
+    def test_the_lock_screen(self):
+        w = self.T.LockWatch()
+        self.assertFalse(w.covered)
+        self.assertEqual([w.tick(1.0, False), w.tick(3.0, None)], ["idle", "idle"])        # not locked, or Hyprland did not say
+        self.assertEqual(w.tick(5.0, True), "cover")                           # locked: the cover goes up under the lock screen
+        self.assertEqual([w.tick(5.5, True), w.tick(6.0, True)], ["hold", "hold"])
+        self.assertEqual(w.tick(900.0, False), "play")                         # unlocked
+        self.assertFalse(w.covered)
+        self.assertEqual(w.tick(902.0, False), "idle")
+        self.assertEqual(w.tick(1000.0, True), "cover")
+        self.assertEqual([w.tick(1000.5, None), w.tick(1001.5, None)], ["hold", "hold"])     # Hyprland does not answer: the cover waits a little
+        self.assertEqual(w.tick(1002.0, True), "hold")                         # it answered again
+        self.assertEqual([w.tick(1002.5, None), w.tick(1004.4, None)], ["hold", "hold"])
+        self.assertEqual(w.tick(1004.6, None), "drop")                         # two seconds without an answer: the cover may not stay
+        self.assertFalse(w.covered)
+        self.assertEqual(w.tick(1005.0, None), "idle")
 
 
 class FakeSurface:
@@ -678,13 +1164,19 @@ class FakeWin:
     def get_surface(self):
         return self.surface
 
+    def destroy(self):
+        self.visible = False
+
 
 class FakeView:
+    ticks = 0
+
     def queue_draw(self):
         pass
 
     def add_tick_callback(self, fn):
-        return 1
+        self.ticks += 1
+        return self.ticks
 
     def remove_tick_callback(self, tick):
         pass
@@ -743,13 +1235,16 @@ def player():
     return p
 
 
-class PlayerTest(unittest.TestCase):
+class NoCompositor(unittest.TestCase):
     def setUp(self):
         from eva_desk import gtkutil  # noqa: F401
         from gi.repository import Gtk4LayerShell as LS
         patch = mock.patch.object(LS, "set_monitor")      # place() names the monitor to the compositor; there is none here
         patch.start()
         self.addCleanup(patch.stop)
+
+
+class PlayerTest(NoCompositor):
 
     def test_plays_to_the_end_once(self):
         p, done, piece = player(), [], dummy()
@@ -910,6 +1405,82 @@ class PlayerTest(unittest.TestCase):
         self.assertIsInstance(click, Gtk.GestureClick)
         self.assertEqual(click.get_button(), 0)           # 0 is any button; a gesture listens to the left one unless told
 
+    def test_a_held_piece_waits_on_its_first_frame(self):
+        from gi.repository import Gtk
+        p, done = player(), []
+        self.assertTrue(p.play(dummy(), MON, {}, on_done=lambda: done.append(1), held=True))
+        self.assertTrue(p.win.visible and p.busy and p.held)
+        self.assertEqual((p.timers, p.view.ticks), ([], 0))                    # no clock runs and no safety counts down: it may wait for hours
+        p._paint(Gtk.Snapshot(), 1720, 720)
+        self.assertEqual(p.at, 0.0)
+        p.start()
+        self.assertEqual(([ms for ms, _ in p.timers], p.view.ticks, p.held), ([3000], 1, False))
+        p.start()                                                              # again: nothing more
+        self.assertEqual((len(p.timers), p.view.ticks), (1, 1))
+        p.advance(5.0)
+        p.advance(7.0)
+        self.assertEqual(done, [1])
+
+    def test_a_click_ends_a_held_piece_too(self):
+        p = player()
+        p.play(dummy(), MON, {}, held=True)
+        p.skip()
+        self.assertFalse(p.win.visible or p.busy or p.held)
+        p.start()                                                              # the locker exits later: nothing is left to start
+        self.assertEqual((p.timers, p.view.ticks), ([], 0))
+
+
+class PlayersTest(NoCompositor):
+    def players(self):
+        from eva_desk.motion.player import Players
+        return Players(object(), make=lambda app: player())
+
+    def test_a_player_for_every_monitor(self):
+        ps, side = self.players(), FakeMonitor(1080, 1920)
+        self.assertFalse(ps.busy)
+        self.assertTrue(ps.play(dummy(), MON, {}))
+        self.assertTrue(ps.play(dummy(), side, {}))
+        self.assertEqual(set(ps.by_monitor), {MON, side})
+        self.assertTrue(all(p.win.visible for p in ps.by_monitor.values()) and ps.busy)
+        self.assertTrue(ps.play(dummy(), MON, {}))                             # the same monitor again: the same player
+        self.assertEqual(len(ps.by_monitor), 2)
+        self.assertFalse(ps.play(dummy(), None, {}))
+        ps.stop()
+        self.assertFalse(ps.busy or any(p.win.visible for p in ps.by_monitor.values()))
+
+    def test_what_outranks_what_on_one_monitor(self):
+        ps, berserk, track, card = self.players(), dummy(covers=False), dummy(covers=False), dummy()
+        berserk.rank = 1
+        self.assertTrue(ps.play(berserk, MON, {}))
+        self.assertFalse(ps.play(track, MON, {}))                              # the track card is dropped: berserk outranks it
+        self.assertIs(ps.by_monitor[MON].piece, berserk)
+        self.assertFalse(ps.busy)                                              # nothing covers yet
+        self.assertTrue(ps.play(card, MON, {}))                                # what covers takes the place of anything
+        self.assertEqual((berserk.released, ps.busy), (1, True))
+        self.assertFalse(ps.play(dummy(covers=False), MON, {}))
+        self.assertTrue(ps.play(track, FakeMonitor(), {}))                     # another monitor is its own matter
+
+    def test_held_pieces_start_together_and_stop_by_name(self):
+        ps, side, a, b = self.players(), FakeMonitor(1080, 1920), dummy(), dummy()
+        a.name = b.name = "wake"
+        ps.play(a, MON, {}, held=True)
+        ps.play(b, side, {}, held=True)
+        self.assertTrue(all(p.held for p in ps.by_monitor.values()))
+        ps.start()
+        self.assertFalse(any(p.held for p in ps.by_monitor.values()))
+        ps.stop("card")                                                        # another name: nothing ends
+        self.assertTrue(ps.busy)
+        ps.stop("wake")
+        self.assertEqual((ps.busy, a.released, b.released), (False, 1, 1))
+
+    def test_a_monitor_that_went_away_is_forgotten(self):
+        ps, side, gone = self.players(), FakeMonitor(1080, 1920), []
+        ps.play(dummy(), MON, {})
+        ps.play(dummy(), side, {})
+        ps.by_monitor[side].destroy = lambda: gone.append(side)
+        ps.forget([MON])
+        self.assertEqual((set(ps.by_monitor), gone), ({MON}, [side]))
+
 
 class FakeHypr:
     lua = True
@@ -947,9 +1518,12 @@ class FakePlayer:
     def __init__(self):
         self.calls = []
 
-    def play(self, piece, mon, ctx, on_done=None):
+    def play(self, piece, mon, ctx, on_done=None, held=False):
         self.calls.append((piece, mon, ctx))
         return True
+
+    def forget(self, alive):
+        pass
 
 
 class LaunchWiring(unittest.TestCase):
@@ -1031,8 +1605,10 @@ class LaunchWiring(unittest.TestCase):
         self.assertEqual(app.command("play card"), "ok")
         self.assertEqual(app.command("play shaft STEAM"), "ok")
         self.assertEqual(app.motion.calls[1][2]["app"], "STEAM")
-        self.assertEqual(app.command("play nope"), "unknown piece: nope (card, shaft)")
-        self.assertEqual(app.command("play"), "play: card | shaft")
+        from eva_desk import motion
+        names = list(motion.pieces())
+        self.assertEqual(app.command("play nope"), f"unknown piece: nope ({', '.join(names)})")
+        self.assertEqual(app.command("play"), "play: " + " | ".join(names))
         app.motion = None
         self.assertEqual(app.command("play card"), "motion is not available")
 
@@ -1055,3 +1631,373 @@ class LaunchWiring(unittest.TestCase):
         app.motion = None                                                     # and with no player at all it is as before
         app._spawn_pulse("abc")
         self.assertEqual(len(plays), 2)
+
+
+class FakePlayers:
+    busy = False
+
+    def __init__(self):
+        self.calls, self.started, self.stopped, self.up = [], 0, [], {}
+
+    def play(self, piece, mon, ctx, on_done=None, held=False):
+        self.calls.append((type(piece).__name__, mon, ctx, held))
+        self.up[mon] = piece
+        return True
+
+    def playing(self, mon):
+        return self.up.get(mon)
+
+    def start(self):
+        self.started += 1
+
+    def stop(self, name=None):
+        self.stopped.append(name)
+        self.up = {mon: piece for mon, piece in self.up.items() if name not in (None, piece.name)}
+
+    def forget(self, alive):
+        pass
+
+
+def events_app(**motion):
+    """An App with no windows: two monitors, DP-1 (the main one, focused) and DP-2."""
+    from eva_desk.app import App
+    from eva_desk.motion import triggers
+    app = App.__new__(App)
+    app.cfg = config.load("/nonexistent")
+    app.cfg["motion"].update(motion)
+    app.hypr, app.motion = FakeHypr(), FakePlayers()
+    app.stages, app.bars, app.overlays, app.prev, app.launcher = {}, {}, {}, {}, None
+    app.gdk_of = {"DP-1": "GDK-1", "DP-2": "GDK-2"}
+    app.hypr.state = {"monitors": [{"id": 0, "name": "DP-1", "width": 3440, "height": 1440, "focused": True, "activeWorkspace": {"id": 1}},
+                                   {"id": 1, "name": "DP-2", "width": 1080, "height": 1920, "focused": False, "activeWorkspace": {"id": 5}}],
+                      "clients": [], "activeworkspace": {"id": 1}, "version": {"version": "0.56.0"}}
+    app.res_state = app.music_state = None
+    app.tracks = triggers.TrackWatch(0.0)
+    app.later = []
+    app._later = lambda ms, fn: app.later.append((ms, fn))
+    app.schedule = lambda *a: None
+    app.focused_gdk = lambda: "FOCUSED"
+    return app
+
+
+class EventsWiring(unittest.TestCase):
+    def test_the_defaults_are_on(self):
+        self.assertEqual(config.load("/nonexistent")["motion"],
+                         {"launch": True, "boot": True, "wake": True, "berserk": True, "track": True, "track_corner": "bottom-left"})
+
+    def test_boot_plays_once_per_session(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"HYPRLAND_INSTANCE_SIGNATURE": "sig-1"}):
+            marker, app = Path(tmp) / "eva-desk.boot", events_app()
+            self.assertTrue(app._boot(marker))
+            (name, mon, ctx, held), = app.motion.calls                         # the main monitor only
+            self.assertEqual((name, mon, held), ("Boot", "GDK-1", False))
+            self.assertEqual((ctx["outputs"], ctx["hyprland"], ctx["bar"]), (["3440×1440", "1080×1920"], "0.56", 56))
+            self.assertEqual(marker.read_text().strip(), "sig-1")
+            self.assertFalse(app._boot(marker))                                # eva-ctl reload: not again
+            self.assertEqual(len(app.motion.calls), 1)
+            with mock.patch.dict(os.environ, {"HYPRLAND_INSTANCE_SIGNATURE": "sig-2"}):           # the next session
+                off = events_app(boot=False)
+                self.assertFalse(off._boot(marker))                            # switched off: nothing plays,
+                self.assertEqual((off.motion.calls, marker.read_text().strip()), ([], "sig-2"))   # but the session is marked
+                none = events_app()
+                none.motion = None
+                marker.unlink()
+                self.assertFalse(none._boot(marker))
+                self.assertTrue(marker.exists() and none.boot_done)
+
+    def test_boot_waits_for_a_monitor_to_play_on(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"HYPRLAND_INSTANCE_SIGNATURE": "sig-1"}):
+            marker, app = Path(tmp) / "eva-desk.boot", events_app()
+            app.gdk_of = {}                                                    # at login the first refresh can come before any monitor is known
+            self.assertFalse(app._boot(marker, now=1.0))
+            self.assertFalse(marker.exists() or app.boot_done)                 # not marked: it tries again at the next refresh
+            app.gdk_of = {"DP-1": "GDK-1"}
+            self.assertTrue(app._boot(marker, now=2.0))
+            self.assertTrue(marker.exists() and app.boot_done)
+            marker.unlink()
+            late = events_app()
+            late.gdk_of = {}
+            self.assertFalse(late._boot(marker, now=1.0))
+            self.assertFalse(late._boot(marker, now=30.0))                     # twenty seconds on and still none: it gives up for this session
+            self.assertTrue(marker.exists() and late.boot_done)
+            self.assertEqual(late.motion.calls, [])
+
+    def test_no_boot_over_a_game_or_a_fullscreen_window(self):
+        game = {"class": "steam_app_42", "workspace": {"id": 9}, "fullscreen": 0, "mapped": True}
+        full = {"class": "mpv", "workspace": {"id": 1}, "fullscreen": 2, "mapped": True}
+        for client in (game, full):
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"HYPRLAND_INSTANCE_SIGNATURE": "sig-1"}):
+                marker, app = Path(tmp) / "eva-desk.boot", events_app()
+                app.hypr.state["clients"] = [client]
+                self.assertFalse(app._boot(marker, now=1.0))
+                self.assertEqual((app.motion.calls, marker.exists(), app.boot_done), ([], True, True), client["class"])
+
+    def test_the_bar_is_not_handed_what_its_switches_turned_off(self):
+        class Bar:
+            def __init__(self):
+                self.got = {}
+
+            def update(self, **state):
+                self.got.update(state)
+        sampler = types.SimpleNamespace(sample=lambda: {"cpu": 99, "mem_used": 1 << 30, "mem_total": 2 << 30, "net": {"kind": "lan", "down": 0}})
+        app = events_app()
+        app.cfg["bar"].update(music=False, resources=[])                       # the track card and the berserk limit still need both sources
+        bar, app.sampler = Bar(), sampler
+        app.bars["DP-1"] = bar
+        app._on_music("Playing", "A", "X", now=50.0)
+        self.assertTrue(app._resources())
+        self.assertEqual(bar.got, {})                                          # but a bar that shows neither is told neither
+        self.assertEqual((app.music_state["title"], app.res_state["cpu"]), ("A", 99))
+        on = events_app()
+        bar, on.sampler = Bar(), sampler
+        on.bars["DP-1"] = bar
+        on._on_music("Playing", "A", "X", now=50.0)
+        on._resources()
+        self.assertEqual((bar.got["music"]["title"], bar.got["resources"]["cpu"]), ("A", 99))
+
+    def test_the_sampler_outlives_a_request_that_fails(self):
+        app = events_app()
+        app.sampler = types.SimpleNamespace(sample=lambda: {"cpu": 5, "mem_used": 1, "mem_total": 2, "net": {"kind": "lan", "down": 0}})
+
+        def down(what):
+            raise OSError("Hyprland does not answer")
+        app.hypr.j = down
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(app._resources())                                  # the timer goes on
+
+    def test_a_track_that_waits_for_the_gap_is_asked_for_again(self):
+        app = events_app()
+        app._on_music("Playing", "A", "X", now=50.0)
+        self.assertTrue(app._track_settled(50.5))
+        app._on_music("Playing", "B", "Y", now=52.0)
+        asked = len(app.later)
+        self.assertFalse(app._track_settled(52.5))                             # too soon after the last card
+        self.assertEqual([ms for ms, _ in app.later[asked:]], [1000])          # so it asks again in a second
+        self.assertTrue(app._track_settled(60.6))
+        self.assertEqual([c[2]["title"] for c in app.motion.calls], ["A", "B"])
+
+    def test_berserk_announces_itself_when_it_starts(self):
+        app = events_app()
+        app.cfg["overlays"].update(berserk=90, berserk_seconds=0)
+        app._berserk_check(97, 40)
+        (name, mon, ctx, held), = app.motion.calls
+        self.assertEqual((name, mon, held, ctx["load"], ctx["seconds"]), ("Berserk", "GDK-1", False, "CPU 97%", 0))
+        app._berserk_check(98, 40)                                             # still hot: it said so already
+        self.assertEqual(len(app.motion.calls), 1)
+        app._berserk_check(10, 10)                                             # cooled
+        app._berserk_check(20, 95)                                             # and hot again, on memory this time
+        self.assertEqual([c[2]["load"] for c in app.motion.calls], ["CPU 97%", "RAM 95%"])
+
+    def test_berserk_and_the_track_card_stay_out_of_the_way(self):
+        game = {"class": "steam_app_42", "workspace": {"id": 9}, "fullscreen": 0, "mapped": True}
+        full = {"class": "mpv", "workspace": {"id": 1}, "fullscreen": 2, "mapped": True}
+
+        def blocked(change):
+            app = events_app()
+            change(app)
+            app.tracks.feed("Playing", "B", "Y", 50.0)
+            return (app._announce_berserk(97, 40), app._track_settled(50.5), app.motion.calls if app.motion else [])
+        self.assertEqual(blocked(lambda a: None)[:2], (1, True))               # nothing in the way: both play
+        for change in (lambda a: a.hypr.state.update(clients=[game]),          # a game is open, on a workspace that is not showing
+                       lambda a: a.hypr.state.update(clients=[full]),          # a fullscreen window on that monitor
+                       lambda a: setattr(a.motion, "busy", True),              # a sequence that covers is playing
+                       lambda a: setattr(a, "launcher", types.SimpleNamespace(visible=True)),
+                       lambda a: a.overlays.update(power=types.SimpleNamespace(visible=True)),
+                       lambda a: a.overlays.update(alttab=types.SimpleNamespace(visible=True)),
+                       lambda a: a.cfg["motion"].update(berserk=False, track=False),
+                       lambda a: setattr(a, "gdk_of", {}),
+                       lambda a: setattr(a, "motion", None)):
+            self.assertEqual(blocked(change), (0, False, []))
+
+    def test_a_new_track_gets_a_card(self):
+        app = events_app(track_corner="bottom-right")
+        app.hypr.state["monitors"][0]["focused"], app.hypr.state["monitors"][1]["focused"] = False, True     # the side monitor has the focus
+        app._on_music("Playing", "B", "", now=50.0)
+        app._on_music("Playing", "B", "Y", now=50.1)
+        self.assertEqual([ms for ms, _ in app.later], [450, 450])
+        self.assertEqual(app.music_state, {"status": "Playing", "title": "B", "artist": "Y"})
+        self.assertFalse(app._track_settled(50.3))                             # not settled yet
+        self.assertTrue(app._track_settled(50.6))
+        (name, mon, ctx, held), = app.motion.calls
+        self.assertEqual((name, mon, held), ("Track", "GDK-1", False))         # on the main monitor all the same
+        self.assertEqual((ctx["title"], ctx["artist"], ctx["corner"]), ("B", "Y", "bottom-right"))
+        self.assertFalse(app._track_settled(51.0))                             # once
+
+    def test_play_tries_any_of_the_six(self):
+        app = events_app()
+        for name in ("card", "shaft", "boot", "wake", "berserk", "track"):
+            self.assertEqual(app.command(f"play {name}"), "ok", name)
+        self.assertEqual([c[0] for c in app.motion.calls], ["Card", "Shaft", "Boot", "Wake", "Berserk", "Track"])
+        self.assertTrue(all(c[1] == "FOCUSED" for c in app.motion.calls))
+        self.assertEqual(app.motion.calls[4][2]["load"], "CPU 97%")            # nothing sampled yet
+        self.assertEqual((app.motion.calls[5][2]["title"], app.motion.calls[5][2]["artist"]), ("TITLE", "ARTIST"))
+        app.music_state = {"status": "Playing", "title": "Now", "artist": "Them"}
+        app.command("play track")
+        app.command("play track My own words")
+        self.assertEqual([c[2]["title"] for c in app.motion.calls[6:]], ["Now", "My own words"])
+
+
+def lock_app(**motion):
+    """events_app(), with Hyprland saying the session is not locked."""
+    from eva_desk.motion import triggers
+    app = events_app(**motion)
+    app.lock_watch = triggers.LockWatch()
+    app.hypr.state["locked"] = {"locked": False}
+    return app
+
+
+class LockWiring(unittest.TestCase):
+    def test_lock_always_starts_the_locker(self):
+        app = lock_app()
+        self.assertEqual((app.lock(), app.lock()), ("ok", "ok"))               # asked twice, started twice: the daemon never refuses a lock
+        self.assertEqual(app.hypr.execs, ["hyprlock", "hyprlock"])
+        for bare in (lock_app(wake=False), lock_app()):                        # with the sequence off, or with no player at all
+            if bare.cfg["motion"]["wake"]:
+                bare.motion = None
+            self.assertEqual((bare.lock(), bare.hypr.execs), ("ok", ["hyprlock"]))
+        none = lock_app()
+        none.cfg["power"]["lock"] = ""
+        self.assertEqual((none.lock(), none.hypr.execs), ("no lock command", []))
+
+    def test_the_cover_goes_up_under_the_lock_screen_and_plays_when_it_closes(self):
+        app = lock_app()
+        app._watch_lock(100.0)                                                 # not locked: nothing, and it looks again in two seconds
+        self.assertEqual((app.motion.calls, [ms for ms, _ in app.later]), ([], [2000]))
+        app.hypr.state["locked"] = {"locked": True}                            # locked, by whatever started the lock screen
+        app._watch_lock(102.0)
+        (name, mon, ctx, held), = app.motion.calls
+        self.assertEqual((name, mon, held), ("Wake", "GDK-1", True))           # the main monitor, held on its first frame
+        self.assertEqual(app.later[-1][0], 500)                                # and it looks more often now, to catch the unlock
+        app._watch_lock(102.5)
+        app._watch_lock(3000.0)                                                # locked for a long while: the one cover stays
+        self.assertEqual((len(app.motion.calls), app.motion.started, app.motion.stopped), (1, 0, []))
+        app.hypr.state["locked"] = {"locked": False}                           # unlocked
+        app._watch_lock(3600.0)
+        self.assertEqual((app.motion.started, app.motion.stopped, app.later[-1][0]), (1, [], 2000))
+        app._watch_lock(3602.0)
+        self.assertEqual((len(app.motion.calls), app.motion.started), (1, 1))  # once
+
+    def test_a_cover_is_put_back_when_its_monitor_comes_back(self):
+        app = lock_app()
+        app.hypr.state["locked"] = {"locked": True}
+        app._watch_lock(10.0)
+        app.motion.up.clear()                                                  # the output went away, and its player with it
+        app.gdk_of["DP-1"] = "GDK-1-AGAIN"
+        app._watch_lock(10.5)
+        self.assertEqual([(c[0], c[1], c[3]) for c in app.motion.calls], [("Wake", "GDK-1", True), ("Wake", "GDK-1-AGAIN", True)])
+
+    def test_the_watch_cannot_die_and_the_cover_cannot_stay(self):
+        app = lock_app()
+        app.hypr.state["locked"] = {"locked": True}
+        app._watch_lock(10.0)
+
+        def down(what):
+            raise OSError("Hyprland does not answer")
+        app.hypr.j = down
+        with contextlib.redirect_stdout(io.StringIO()):
+            app._watch_lock(10.5)                                              # a failed request: it looks again, and the cover waits
+            self.assertEqual((app.motion.stopped, app.later[-1][0]), ([], 500))
+            app._watch_lock(13.0)                                              # still no answer after two seconds: the cover goes
+        self.assertEqual((app.motion.stopped, app.later[-1][0]), (["wake"], 2000))
+        broken = lock_app()
+        broken.hypr.state["locked"] = {"locked": True}
+        broken.motion.play = mock.Mock(side_effect=RuntimeError("no surface"))
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            broken._watch_lock(10.0)                                           # putting the cover up fails: nothing is left up, and it looks again
+        self.assertEqual((broken.motion.stopped, len(broken.later)), (["wake"], 1))
+        self.assertIn("eva-desk: wake", out.getvalue())
+
+    def test_no_watch_without_the_sequence(self):
+        for app in (lock_app(wake=False), lock_app()):
+            if app.cfg["motion"]["wake"]:
+                app.motion = None
+            app.hypr.state["locked"] = {"locked": True}
+            app._watch_lock(1.0)
+            self.assertEqual(app.later, [])
+        self.assertEqual(lock_app(wake=False).motion.calls, [])
+
+    def test_the_power_menu_and_eva_ctl_lock_go_through_it(self):
+        from eva_desk import overlays as O
+        app = lock_app()
+        self.assertEqual(app.command("lock"), "ok")
+        menu = O.PowerMenu.__new__(O.PowerMenu)
+        menu.app, menu.cross, menu.hide = app, None, lambda: None
+        menu._run("lock", "hyprlock")
+        self.assertEqual(app.hypr.execs, ["hyprlock", "hyprlock"])
+        menu._run("sleep", "systemctl suspend")                                # the other keys are as they were
+        self.assertEqual(app.hypr.execs[-1], "systemctl suspend")
+        bare = O.PowerMenu.__new__(O.PowerMenu)                                # an app with no lock(): the command, as before
+        bare.app, bare.cross, bare.hide = types.SimpleNamespace(hypr=FakeHypr()), None, lambda: None
+        bare._run("lock", "hyprlock")
+        self.assertEqual(bare.app.hypr.execs, ["hyprlock"])
+
+    def test_eva_ctl_lock_locks_without_the_daemon(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done = Path(tmp) / "locked"
+            (Path(tmp) / "eva-desk").mkdir()
+            (Path(tmp) / "eva-desk" / "eva.toml").write_text(f'[power]\nlock = "touch {done}"\n')
+            env = dict(os.environ, XDG_RUNTIME_DIR=tmp, XDG_CONFIG_HOME=tmp, XDG_STATE_HOME=tmp)      # no daemon listens here
+            r = subprocess.run([sys.executable, str(ROOT / "bin" / "eva-ctl"), "lock"], env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for _ in range(100):
+                if done.exists():
+                    break
+                time.sleep(0.05)
+            self.assertTrue(done.exists())                                     # the lock command ran all the same
+            r = subprocess.run([sys.executable, str(ROOT / "bin" / "eva-ctl"), "status"], env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 1)                                  # the other commands still say the daemon is not running
+
+    def test_resume_from_sleep(self):
+        app = lock_app()
+        app._on_sleep(True)                                                    # going to sleep: nothing
+        self.assertEqual(app.motion.calls, [])
+        app._on_sleep(False)
+        (name, mon, ctx, held), = app.motion.calls
+        self.assertEqual((name, mon, held), ("Wake", "GDK-1", False))
+        locked = lock_app()
+        locked.hypr.state["locked"] = {"locked": True}
+        locked._on_sleep(False)                                                # back onto a lock screen: its closing plays the sequence
+        self.assertEqual(locked.motion.calls, [])
+        off = lock_app(wake=False)
+        off._on_sleep(False)
+        self.assertEqual(off.motion.calls, [])
+        bare = lock_app()
+        bare.motion = None                                                     # no player: nothing to do, and nothing raised
+        bare._on_sleep(False)
+
+    def test_hearing_logind(self):
+        app, bus = lock_app(), mock.Mock()
+        with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus):
+            app._watch_sleep()
+        bus.set_exit_on_close.assert_called_once_with(False)                   # the system bus going away must not take the daemon with it
+        self.assertEqual(bus.signal_subscribe.call_args[0][:4],
+                         ("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep", "/org/freedesktop/login1"))
+        off, quiet = lock_app(wake=False), mock.Mock()
+        with mock.patch("gi.repository.Gio.bus_get_sync", return_value=quiet):
+            off._watch_sleep()                                                 # nothing to play after sleep: nothing to hear
+        quiet.signal_subscribe.assert_not_called()
+
+
+class LockWithRealPlayers(NoCompositor):
+    def test_lock_cover_monitor_replaced_unlock(self):
+        from eva_desk.motion.player import Players
+        app, main, again = lock_app(), FakeMonitor(3440, 1440), FakeMonitor(3440, 1440)
+        app.motion = Players(app, make=lambda a: player())
+        app.gdk_of = {"DP-1": main, "DP-2": FakeMonitor(1080, 1920)}
+        app.hypr.state["locked"] = {"locked": True}
+        app._watch_lock(10.0)
+        cover = app.motion.by_monitor[main]
+        self.assertTrue(cover.held and cover.win.visible and cover.piece.name == "wake")
+        self.assertEqual((set(app.motion.by_monitor), cover.timers), ({main}, []))                # the main monitor only; no safety runs while it waits
+        app.gdk_of["DP-1"] = again                                             # the output dropped and came back as a new monitor
+        app.motion.forget([again])
+        self.assertFalse(cover.win.visible)
+        app._watch_lock(10.5)
+        cover = app.motion.by_monitor[again]
+        self.assertTrue(cover.held and cover.piece.name == "wake")
+        app.hypr.state["locked"] = {"locked": False}
+        app._watch_lock(11.0)                                                  # unlocked: it plays, with its safety
+        self.assertEqual((cover.held, [ms for ms, _ in cover.timers]), (False, [2100]))
+        cover.advance(0.0)
+        cover.advance(1.2)
+        self.assertFalse(app.motion.busy or cover.win.visible)

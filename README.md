@@ -74,6 +74,15 @@ ends at your desk. The sequence does not take the keyboard: what you type goes t
 the new one as soon as it opens. A click skips the sequence. Shift+Enter launches without it; `launch = false`
 under `[motion]` turns it off.
 
+**Sequences.** Four more short sequences play by themselves: a boot check when the desk first comes up in a
+session, a sync graph when the lock screen closes or the machine wakes from sleep, hazard strips on the edges
+of the screen when the CPU or memory has been pegged for a while, and a small card in a corner when a new
+track starts playing. None of them takes the keyboard, and a click skips the two that cover the screen. The
+load warning and the track card keep away while a game is open, on a monitor that shows a fullscreen window,
+and while the launcher, the power menu or Alt+Tab is up. Each has a switch under `[motion]` (`boot`, `wake`,
+`berserk`, `track`), and `track_corner` picks the card's corner. The track card needs `playerctl` and follows
+the players named in `[bar] music_players`; it shows at most once in ten seconds.
+
 <p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
 
 **Alt+Tab.** Window switcher. One card per window, most recent first, with the workspace number. Release Alt to jump.
@@ -209,7 +218,8 @@ eva-ctl figure toggle          # the figure and its space
 eva-ctl impact figure          # replay the entrance
 eva-ctl herald                 # replay the maximise backdrop
 eva-ctl eyecatch 3 PROJECTS    # try the workspace card
-eva-ctl play card FIREFOX      # try a launch sequence: card or shaft, with any name
+eva-ctl play card FIREFOX      # try a sequence: card, shaft, boot, wake, berserk or track
+eva-ctl lock                   # start the lock screen
 eva-ctl alarm "text"           # try the EMERGENCY band
 eva-ctl alttab                 # the window switcher
 eva-ctl power                  # the power menu
@@ -260,6 +270,11 @@ Every file it writes gets a backup next to it.
 writes `~/.config/hypr/hyprlock.conf`. Your old file is backed up. The power menu's LOCK runs `hyprlock`;
 pair it with hypridle if you want it on idle.
 
+The wake sequence follows any lock screen, however it was started: the daemon asks Hyprland whether the
+session is locked, puts the sequence's first frame under the lock screen, and plays it when the session
+unlocks. It never starts, stops or waits on the locker itself. `eva-ctl lock` runs the `[power] lock`
+command, which is what the power menu does; it also works when the daemon is not running.
+
 **ReGreet.** `tools/login_screen.py` renders the background and `greeter/regreet.css` styles the form.
 `sudo greeter/install-greeter.sh` copies both into `/etc/greetd` and `/usr/share/backgrounds`, with backups.
 
@@ -275,8 +290,9 @@ Measured on the daemon at idle with a 3440x1440 main monitor:
 | GPU memory | about 100 MB at rest; a full-screen effect adds one texture while it is on screen |
 | Disk | 9 MB for the program and pictures, plus 30 MB of fonts |
 
-The daemon is a single Python process. It wakes up on Hyprland events (workspace, window, focus) and on
-the readout timer, and draws nothing while the picture is still.
+The daemon is a single Python process. It wakes up on Hyprland events (workspace, window, focus), on the
+readout timer, and every two seconds to ask Hyprland whether the session is locked (twice a second while it
+is). It draws nothing while the picture is still.
 
 ## FAQ
 
@@ -290,7 +306,7 @@ draws. If those look right, the problem is in Hyprland; if not, open an issue wi
 **The figure takes too much room.** `eva-ctl figure off` hides it. `figure = 0` under `[figures]` removes it, and
 `stage = 0.2` makes it narrower.
 
-**Too much movement.** `[overlays]` has a switch for each motion. `eyecatch_style = "cut"` is a louder
+**Too much movement.** `[overlays]` has a switch for each motion and `[motion]` one for each sequence. `eyecatch_style = "cut"` is a louder
 version of the workspace card, `"soft"` the default, `eyecatch = false` turns it off. `berserk = 0` stops the
 stage reacting to load. `frame = false` under `[overlays]` drops the brackets, tag and LOCK readout around
 the focused window entirely; `sound = false` drops the sound panel.

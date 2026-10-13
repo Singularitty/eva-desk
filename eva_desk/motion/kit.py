@@ -69,24 +69,26 @@ def _face(face):
     return (d.F_DISPLAY, d.DISPLAY_WEIGHT) if face == "display" else (d.F_META, 400)
 
 
-def _layout(string, face, size, spacing):
-    key = (string, *_face(face), size, spacing)
+def _layout(string, face, size, spacing, width=None):
+    key = (string, *_face(face), size, spacing, width)
     lay = _layouts.get(key)
     if lay is None:
         if len(_layouts) > 512:                      # a running counter makes a new string every frame
             _layouts.clear()
         lay = _layouts[key] = d.plain_layout(string, key[1], size, weight=key[2], spacing=spacing)
+        if width is not None:                        # cut to a width: Pango puts the ellipsis where the script wants it
+            lay.set_width(int(width * Pango.SCALE))
+            lay.set_ellipsize(Pango.EllipsizeMode.END)
     return lay
 
 
-def _stamp(store, string, face, size, spacing, colour, fine):
-    """(texture, x, y, w, h): `string` as a picture, `fine` px to the design px, and where it lies about its layout's corner."""
-    lay = _layout(string, face, size, spacing)
-    ink = lay.get_pixel_extents()[0]
-    x, y, w, h = ink.x - 1, ink.y - 1, ink.width + 2, ink.height + 2      # a clear px all round: its edge is filtered when it is scaled
+def _picture(store, key, box, fine, draw):
+    """(texture, x, y, w, h): what `draw(cr)` paints inside the design-px box (x, y, w, h), set once as a picture,
+    `fine` px to the design px and never more than STAMP_SIDE px on a side."""
+    x, y, w, h = box
     fine = min(fine, STAMP_SIDE / max(w, h))
     pw, ph = (max(1, min(STAMP_SIDE, math.ceil(side * fine))) for side in (w, h))
-    key = (string, *_face(face), size, spacing, colour, pw, ph)
+    key = (*key, pw, ph)
     made = store.get(key)
     if made is None:
         if len(store) > 64:
@@ -94,9 +96,28 @@ def _stamp(store, string, face, size, spacing, colour, fine):
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, pw, ph)
         cr = cairo.Context(surf)
         cr.scale(pw / w, ph / h)
-        d.draw_text(cr, lay, -x, -y, colour)
+        cr.translate(-x, -y)
+        draw(cr)
         made = store[key] = (gtkutil.texture(surf), x, y, w, h)
     return made
+
+
+def _stamp(store, string, face, size, spacing, colour, fine):
+    """_picture() of `string`; the box lies about its layout's corner."""
+    lay = _layout(string, face, size, spacing)
+    ink = lay.get_pixel_extents()[0]
+    box = (ink.x - 1, ink.y - 1, ink.width + 2, ink.height + 2)           # a clear px all round: its edge is filtered when it is scaled
+    return _picture(store, (string, *_face(face), size, spacing, colour), box, fine, lambda cr: d.draw_text(cr, lay, 0, 0, colour))
+
+
+def hex_cells(x0, y0, x1, y1, r, ox=0.0, oy=0.0):
+    """(cx, cy, col, row) of the pointy-top cells of radius r that cover the box and one ring more; (ox, oy) shifts the lattice."""
+    dx, dy, out = math.sqrt(3) * r, 1.5 * r, []
+    for row in range(math.floor((y0 - oy) / dy) - 1, math.ceil((y1 - oy) / dy) + 2):
+        shift = dx / 2 if row & 1 else 0.0           # every other row sits half a cell over
+        for col in range(math.floor((x0 - ox - shift) / dx) - 1, math.ceil((x1 - ox - shift) / dx) + 2):
+            out.append((ox + col * dx + shift, oy + row * dy, col, row))
+    return out
 
 
 class Kit:
@@ -185,6 +206,46 @@ class Kit:
         for i in range(n):
             self.rect(x + i * pitch, y, pitch * 0.72, h, colour if i < lit else off)
 
+    def block(self, x, y, w, h, colour, shadow=None, off=7.0, alpha=1.0):
+        """A slab over its hard shadow, the shadow `off` px to the right and down."""
+        if shadow is not None:
+            self.rect(x + off, y + off, w, h, shadow, alpha)
+        self.rect(x, y, w, h, colour, alpha)
+
+    def brackets(self, x0, y0, x1, y1, leg, colour, width=2.0, alpha=1.0):
+        """The four corners of a box, each two legs, the stroke centred on the box's edge."""
+        half = width / 2
+        for x, y, sx, sy in ((x0, y0, 1, 1), (x1, y0, -1, 1), (x0, y1, 1, -1), (x1, y1, -1, -1)):
+            self.rect(min(x - sx * half, x + sx * leg), y - half, leg + half, width, colour, alpha)             # along the edge, the corner included
+            self.rect(x - half, min(y + sy * half, y + sy * leg), width, leg - half, colour, alpha)             # and away from it
+
+    def lamp(self, x, y, size, colour):
+        """A square lamp and its halo."""
+        self.rect(x - 3, y - 3, size + 6, size + 6, colour, 0.22)
+        self.rect(x, y, size, size, colour)
+
+    def hexagon(self, cx, cy, r, colour, alpha=1.0, width=2.0, fill=0.0):
+        """A pointy-top outline of radius r, and inside it the colour at `fill` of the line's strength. A hexagon is
+        neither a rectangle nor a sheared one, so it is a picture, set once."""
+        if alpha <= 0:
+            return
+        a, b = r * math.cos(math.pi / 6) + width + 1, r + width + 1          # half the picture: the outline, its line and a clear px
+
+        def draw(cr):
+            for i in range(6):
+                turn = math.pi / 6 + i * math.pi / 3
+                cr.line_to(r * math.cos(turn), r * math.sin(turn))
+            cr.close_path()
+            if fill > 0:
+                d.rgba(cr, colour, colour[3] * fill)
+                cr.fill_preserve()
+            d.rgba(cr, colour)
+            cr.set_line_width(width)
+            cr.stroke()
+        texture, x, y, w, h = _picture(self.stamps, ("hexagon", r, width, fill, colour), (-a, -b, 2 * a, 2 * b), self.s * self.density, draw)
+        with self.opacity(alpha) if alpha < 1 else contextlib.nullcontext():
+            self.snap.append_texture(texture, _rect(cx + x, cy + y, w, h))
+
     def radial(self, x, y, r, colour, alpha):
         """A glow: `alpha` at the centre, nothing at r."""
         if r <= 0 or alpha <= 0:
@@ -195,13 +256,13 @@ class Kit:
         self.snap.append_radial_gradient(_rect(x - r, y - r, 2 * r, 2 * r), _point(x, y), r, r, 0.0, 1.0, [inner, outer])
 
     # ---------------------------------------------------------------- type
-    def measure(self, string, size, face="meta", spacing=0.0):
-        return _layout(string, face, size, spacing).get_pixel_extents()[1].width
+    def measure(self, string, size, face="meta", spacing=0.0, width=None):
+        return _layout(string, face, size, spacing, width).get_pixel_extents()[1].width
 
-    def text(self, string, x, y, size, colour, face="meta", spacing=0.0, align="left", alpha=1.0):
+    def text(self, string, x, y, size, colour, face="meta", spacing=0.0, align="left", alpha=1.0, width=None):
         """Type as glyphs: for type that keeps its size while it shows (it may move). `y` is the baseline;
-        returns the width."""
-        lay = _layout(string, face, size, spacing)
+        returns the width. With `width`, type that is wider is cut to it with an ellipsis."""
+        lay = _layout(string, face, size, spacing, width)
         width = lay.get_pixel_extents()[1].width
         if string and alpha > 0:
             left = x - (width if align == "right" else width / 2 if align == "center" else 0)
@@ -251,6 +312,20 @@ class Kit:
             yield
         finally:
             self.snap.pop()
+
+    @contextlib.contextmanager
+    def tile(self, x, y, w, h, tw, th):
+        """What is painted inside, in the cell (x, y, tw, th), repeats over the box (x, y, w, h)."""
+        self.snap.push_repeat(_rect(x, y, max(0, w), max(0, h)), _rect(x, y, tw, th))
+        try:
+            yield
+        finally:
+            self.snap.pop()
+
+    def scanlines(self, x, y, w, h, alpha=0.04):
+        """A bone line of 1 px every third px."""
+        with self.tile(x, y, w, h, w, 3):
+            self.rect(x, y, w, 1, d.BONE, alpha)
 
     @contextlib.contextmanager
     def _cut(self, draw_mask):

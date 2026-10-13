@@ -13,6 +13,7 @@ class Piece:
     name = ""        # the registry key
     length = None    # seconds; None = a loop
     covers = True    # takes the pointer while it plays; a click skips it
+    rank = 0         # among pieces that do not cover: the higher one takes the place of the lower (triggers.outranks)
     still = 0.0      # the moment `eva-desk --render` shows
 
     def prepare(self, kit, ctx):
@@ -32,6 +33,12 @@ class Piece:
         self.paint(kit, t, ctx)
 
 
+def bar_height(kit, ctx):
+    """The bar's height in design px. ctx["bar"] is in the surface's own px (0 with no bar); with none given it is
+    taken as 28, what it is on the main monitor."""
+    return 28.0 if ctx.get("bar") is None else ctx["bar"] / kit.s
+
+
 def available():
     """Whether this GTK can draw the pieces: they cut holes with mask nodes, which came with GTK 4.10."""
     from .. import gtkutil  # noqa: F401  (pins GTK 4 before any gi.repository import)
@@ -41,6 +48,10 @@ def available():
 
 def pieces():
     """Every piece by name. Imported here, when asked, so that importing the package stays cheap."""
+    from .seq.berserk import Berserk
+    from .seq.boot import Boot
     from .seq.card import Card
     from .seq.shaft import Shaft
-    return {"card": Card, "shaft": Shaft}
+    from .seq.track import Track
+    from .seq.wake import Wake
+    return {"card": Card, "shaft": Shaft, "boot": Boot, "wake": Wake, "berserk": Berserk, "track": Track}

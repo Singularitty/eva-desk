@@ -11,7 +11,9 @@
   eva-ctl panel NAME|close      toggle a named MFD panel, or close whichever one is open
   eva-ctl panel sound|close     the sound panel (outputs, inputs, streams, quick toggles)
   eva-ctl eyecatch [N [NAME]]   play the workspace eye-catch (to try it)
-  eva-ctl play card|shaft [NAME] play a launch sequence on the focused monitor (to try it)
+  eva-ctl play NAME [TEXT]      play a sequence on the focused monitor (to try it): card, shaft, boot, wake,
+                                 berserk or track; TEXT is the app's name or the track's title
+  eva-ctl lock                  start the lock screen ([power] lock); it also works when the daemon is not running
   eva-ctl alarm [TEXT]          show the EMERGENCY band (to try it)
   eva-ctl bar show|hide
   eva-ctl status | reload | quit
@@ -148,11 +150,29 @@ def main():
         print(f"{config.theme_name()} ({config.current_theme()['title']}); available: {', '.join(themes.THEMES)}")
         return 0
     try:
-        print(send(" ".join(args)))
-        return 0
+        reply = send(" ".join(args))
     except OSError:
+        if args[0] == "lock":                         # the lock key must lock whether or not the daemon is up
+            return lock_directly()
         print("eva-desk is not running (start it with: eva-desk &)", file=sys.stderr)
         return 1
+    if args[0] == "lock" and reply.startswith("unknown command"):      # a daemon from before the command existed
+        return lock_directly()
+    print(reply)
+    return 0
+
+
+def lock_directly():
+    """Run the [power] lock command ourselves: the daemon cannot be asked to."""
+    config, _ = _eva_desk()
+    cmd = config.load()["power"].get("lock", "")
+    if not cmd:
+        print("no lock command ([power] lock is empty)", file=sys.stderr)
+        return 1
+    subprocess.Popen(["/bin/sh", "-c", cmd], start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("eva-desk is not running: started the lock screen directly")
+    return 0
 
 
 if __name__ == "__main__":

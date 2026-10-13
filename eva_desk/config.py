@@ -108,6 +108,11 @@ DEFAULTS = {
     },
     "motion": {                   # sequences the daemon plays when something happens
         "launch": True,           # Enter in the launcher plays one: the card for an app, the shaft for a game
+        "boot": True,             # once per Hyprland session, when the daemon first starts
+        "wake": True,             # when the lock screen closes, and after sleep
+        "berserk": True,          # when load crosses [overlays] berserk, which still sets the limit
+        "track": True,            # a card in a corner when a new track starts playing
+        "track_corner": "bottom-left",   # or "bottom-right"
     },
     "hyprland": {
         "maximize_bind": ["SUPER + RETURN"],   # one key or a list; fills the screen under the bar

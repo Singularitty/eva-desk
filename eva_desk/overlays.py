@@ -661,7 +661,10 @@ class PowerMenu(_Overlay):
     def _run(self, key, cmd):
         self.cross = None
         self.hide()
-        if cmd:
+        lock = getattr(self.app, "lock", None) if key == "lock" else None
+        if lock is not None:                                   # through the daemon, so the wake sequence can follow the unlock
+            lock()
+        elif cmd:
             self.app.hypr.exec(cmd)
         elif key == "logout":                                  # no command configured: Hyprland's own exit
             if self.app.hypr.lua:
