@@ -113,6 +113,8 @@ still running), the daemon logs it and keeps the old monitor behaviour, so nothi
 
 ### Launch sequence (`launch/`)
 
+Replaced by `2026-10-13-motion-graphics-design.md`: the launch is drawn in code, not cut from key frames.
+
 Enter in the launcher: the app is executed at t = 0 (unchanged), the launcher hides, and
 `Sequence` plays on the launcher's monitor on the overlay layer, keyboard none, pass-through off
 for its duration. Esc skips it. Total 2.10 s (50 frames at 24):
