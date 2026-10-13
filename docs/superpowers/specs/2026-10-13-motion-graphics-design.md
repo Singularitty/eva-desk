@@ -37,7 +37,7 @@ rejected in review as "a picture moving". `assets/launch/` is never created.
 | Launch input | The keyboard stays free: typing goes to the focused window, which is the new one once it has opened. A click with any button skips the sequence. Shift+Enter launches with no sequence. |
 | The Eva in pictures | Only the standby loop shows it. The pictures are generated: the figure nearly lost in black, drawn by its rim light, with lit green eyes. The flat poster frames of the earlier launch design are not used anywhere. |
 | Berserk | Until now berserk only recoloured the stage, which is hidden whenever the figure is off. It gets a sequence on the edges of the screen and colours the wallpaper's ripples and embers; the stage keeps its own berserk colour. |
-| Unlock | Hyprland reports no unlock, so the daemon starts the locker itself and plays the sequence when it exits. |
+| Unlock | The daemon only watches: it asks Hyprland whether the session is locked (`hyprctl locked`) and never starts, stops or waits on a locker for this. While the session is locked the wake sequence sits under the lock screen on its first frame, and it plays when the session unlocks: the lock screen fades onto the cover, not onto the desk. It follows any lock screen, however it was started. |
 | Idle | The daemon runs its own `hypridle` with a generated config. Without `hypridle`, standby starts only by command. |
 | Wallpaper | On main monitors the daemon draws the wallpaper itself and moves it visibly. `awww` keeps serving the other monitors. |
 | GPU | Ambient motion may use the GPU, but never to full load and never at a game's cost: while a game is open, every ambient piece stops repainting on every monitor. |
@@ -112,11 +112,14 @@ Thin helpers over the snapshot, colours by theme role only:
   call for type that changes size, drawn as a picture. `letters(string, ...)`: a name cut where a caret can
   stand, or `None` when its script joins its letters or runs right to left (it is then set whole).
   `sprite(texture, x, y, w, h, alpha, tint)` for pictures.
+  `text` and `measure` take a `width`: type that is wider is cut to it with an ellipsis, by Pango.
 - `rect`, `stroke_rect`, `band` (what lies between two rectangles), `para` (a parallelogram), `lines`,
-  `hazard`, `hexagon`, `brackets`, `segbar`, `lamp`, `screen`: the shapes the pieces share. The MFD
-  ones wrap `mfd/widgets.py`.
+  `block` (a slab over its hard shadow), `hazard`, `brackets`, `segbar`, `lamp`, `scanlines`, `screen`: the
+  shapes the pieces share. The MFD ones wrap `mfd/widgets.py`.
+- `hexagon(cx, cy, r, ...)`: an outline, optionally filled. It is neither a rectangle nor a sheared one, so
+  it is a picture set once and kept with the stamps; `hex_cells(...)` gives the cells of a lattice over a box.
 - `clip(rect)`, `clip_out(rect)` and `clip_out_para(...)` (holes, as masks), `opacity`, `transform`,
-  `screen_blend`: scoped with `with`.
+  `tile` (what is painted in one cell repeats over a box), `screen_blend`: scoped with `with`.
 - `cover(texture, box, zoom, anchor)`: a picture filling a box, zoomed about an anchor point.
 - `radial(x, y, r, colour, alpha)`: a soft glow.
 
@@ -138,6 +141,13 @@ is not shown at all. A covering sequence replaces whatever is playing on its mon
 track card are dropped if a covering sequence, the launcher, the power menu, Alt+Tab or standby is up.
 While a covering sequence plays, the spawn pulse and the workspace eye-catch do not: the window a launch
 opens lands under the sequence, and its pulse would be drawn on top.
+
+The daemon keeps one `SequencePlayer` per monitor (`Players`), made when a piece first plays there, because
+boot and wake play on every main monitor at once. On one monitor a piece plays only if it outranks what is
+playing: a piece that covers takes the place of anything, among the others the higher `rank` wins (berserk
+over the track card), and what is outranked is dropped, not queued. A piece can also be put up `held`: shown
+on its first frame with no clock and no safety timeout, until `start()`. That is how the wake sequence waits
+under a lock screen. A click ends a held piece like any other.
 
 `AmbientLayer` hosts a loop: a layer surface that repaints from a timer at `[ambient] fps`, with
 `pause()` and `resume()`. The wallpaper and the wall sit on the bottom layer (as the stage does), standby
@@ -204,7 +214,12 @@ the screen about the vanishing point (the centre).
 ### Boot
 
 Plays once per Hyprland session on every main monitor, covering it. Not on `eva-ctl reload`: the daemon
-keeps a marker in `$XDG_RUNTIME_DIR` holding the Hyprland instance signature.
+keeps a marker in `$XDG_RUNTIME_DIR` holding the Hyprland instance signature. The session is marked even
+when `[motion] boot` is off, so that switching it on later does not play the boot in the middle of a
+session. It is not marked while no main monitor is known yet (at login the first refresh can come before
+the outputs): each refresh tries again for twenty seconds. It never plays over a game or on a monitor
+that shows a fullscreen window. The title block rides the seam (62 % of the height), so the gate opens
+through the digits on a frame of any shape.
 
 | Time | What happens |
 |---|---|
@@ -217,7 +232,12 @@ keeps a marker in `$XDG_RUNTIME_DIR` holding the Hyprland instance signature.
 
 ### Wake
 
-Plays on every main monitor, covering it, when the locker exits or the machine resumes from sleep.
+Plays on every main monitor, covering it, when the session unlocks or the machine resumes from sleep. Its
+first frame is ink with the hazard strip on the floor. Once Hyprland says the session is locked (so after
+the locker has taken its screenshot, if it uses one for a background) the sequence is put up under the
+lock screen and held on that frame, so that the lock screen fades onto the cover and the sequence follows
+without the desk showing first. The cover may be up only while Hyprland says the session is locked: when
+it stops answering for two seconds, or anything in the watch fails, the cover comes down.
 
 | Time | What happens |
 |---|---|
@@ -352,20 +372,26 @@ wallpaper does not, its cap drops, or it pauses on a workspace that windows cove
 ## Triggers and sources
 
 - **Launch**: `Launcher._launch` calls `app.play_launch(item, monitor, plain)`.
-- **Boot**: on start, if the runtime marker is missing or names another Hyprland instance.
-- **Wake**: `App.lock()` runs `[power] lock` as a child of the daemon and plays the sequence when it
-  exits with status 0. The power menu's LOCK calls it, and so does the new `eva-ctl lock`; any other
-  lock key should be bound to that. Resume from sleep is logind's `PrepareForSleep(false)` on the system
-  bus; if a locker child is alive then, its exit plays the sequence instead.
+- **Boot**: on start, if the runtime marker is missing or names another Hyprland instance; tried again
+  at each refresh while no main monitor is known.
+- **Wake**: `App._watch_lock` asks Hyprland every two seconds whether the session is locked (`j/locked`),
+  and twice a second while the cover is up. Locked: the sequence goes up held on every main monitor, and
+  is put back on a monitor that went away and returned. Unlocked: it plays. The lock screen itself is
+  started as it always was: `App.lock()` hands `[power] lock` to Hyprland and never refuses; the power
+  menu's LOCK and `eva-ctl lock` call it, and `eva-ctl lock` runs the command itself when the daemon
+  cannot be reached. Resume from sleep is logind's `PrepareForSleep(false)` on the system bus; if the
+  session is locked then, its unlocking plays the sequence instead.
 - **Berserk**: the rising edge of the existing `_berserk_check`.
-- **Track change**: the existing `NowPlaying`, when the status is Playing and (title, artist) differs
-  from the last one announced, after 0.4 s without a further change. The track that is already playing
-  when the daemon starts is noted and not announced.
+- **Track change**: the existing `NowPlaying`, when the status is Playing and the track differs from the
+  last one announced, after 0.4 s without a further change. The track that is already playing when the
+  reports begin is noted and not announced. An artist that arrives after its title is the same track. A
+  track announced in the last two minutes is not announced again, and two cards are at least ten seconds
+  apart: a track that comes sooner waits for the gap.
 - **Standby**: `sources/idle.py` writes `hypridle.conf` in the state directory (one listener:
   `timeout`, `on-timeout = <path to eva-ctl> standby on`) and runs `hypridle -c` on it as a child, stopped
   by its handle on quit.
 - The sampler and `NowPlaying` are created when the bar or any motion piece needs them, no longer only
-  with the bar.
+  with the bar. The bars are still told only what their own switches ask for.
 
 ## Assets
 
