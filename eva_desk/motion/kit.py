@@ -5,7 +5,8 @@ A piece works in design px. The kit scales them so that a frame is 720 high on a
 Colours are the rgba tuples of draw.py (`d.BONE`, `d.col("ink4")`).
 
 Everything here is something the GPU draws by itself: rectangles, borders, glyphs, pictures and gradients, moved
-by transforms and cut by masks. Nothing is rasterised on the CPU frame after frame, which rules two things out:
+by transforms, cut by masks and laid on by blends. Nothing is rasterised on the CPU frame after frame, which rules
+two things out:
 
 - Path nodes. GTK rasterises a path each time it changes, and in a piece everything changes every frame; and
   cairo, which draws the offline frames, asserts on some nested path clips. A shape that is not a rectangle is
@@ -23,7 +24,7 @@ from .. import gtkutil  # (pins GTK 4 before any gi.repository import)
 import gi  # noqa: E402
 
 gi.require_version("Gsk", "4.0")
-from gi.repository import Gdk, GLib, Graphene, Gsk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import draw as d  # noqa: E402
 from .timeline import clamp  # noqa: E402
@@ -118,6 +119,19 @@ def hex_cells(x0, y0, x1, y1, r, ox=0.0, oy=0.0):
         for col in range(math.floor((x0 - ox - shift) / dx) - 1, math.ceil((x1 - ox - shift) / dx) + 2):
             out.append((ox + col * dx + shift, oy + row * dy, col, row))
     return out
+
+
+def screen_box(x, y, w, h):
+    """(x, y, w, h): the box a Kit.screen() of that size leaves for what it shows, under its tag."""
+    return x + 13, y + 28, w - 26, h - 38
+
+
+def cover_box(tw, th, x, y, w, h, zoom=1.0, fx=0.5, fy=0.5):
+    """(ix, iy, iw, ih): where a tw x th picture lies when it fills the box (x, y, w, h) at `zoom`. What overhangs
+    is split by (fx, fy): 0 keeps the picture's left or top edge on the box's, 1 its right or bottom one."""
+    k = max(w / tw, h / th) * zoom
+    iw, ih = tw * k, th * k
+    return x + (w - iw) * fx, y + (h - ih) * fy, iw, ih
 
 
 class Kit:
@@ -246,6 +260,73 @@ class Kit:
         with self.opacity(alpha) if alpha < 1 else contextlib.nullcontext():
             self.snap.append_texture(texture, _rect(cx + x, cy + y, w, h))
 
+    def ring(self, cx, cy, r, colour, width=2.0, alpha=1.0):
+        """A pointy-top hexagon outline of any radius, as six lines: for one whose size changes with every frame,
+        where hexagon() would set a new picture each time."""
+        if r <= 0 or alpha <= 0:
+            return
+        pts = [(cx + r * math.cos(math.pi / 6 + i * math.pi / 3), cy + r * math.sin(math.pi / 6 + i * math.pi / 3)) for i in range(6)]
+        self.lines([(*pts[i], *pts[(i + 1) % 6]) for i in range(6)], colour, width, alpha)
+
+    def screen(self, x, y, w, h, tag="", hot=""):
+        """A screen of the MFD panels: a bezel and its outline, a dark face under scanlines, its tag and, a little
+        past it, a word in gold. Returns (x, y, w, h), the box that is left for what the screen shows."""
+        self.rect(x, y, w, h, d.col("ink3"))
+        self._border(x, y, w, h, [1.0] * 4, d.col("ink4"), 1.0)
+        self.rect(x + 5, y + 5, w - 10, h - 10, d.col("ink_deep"))
+        self.scanlines(x + 5, y + 5, w - 10, h - 10)
+        if tag:
+            width = self.text(tag, x + 13, y + 20, 9.5, d.BONE3, spacing=2)
+            if hot:
+                self.text(hot, x + 13 + width + 8, y + 20, 9.5, d.GOLD, spacing=2)
+        return screen_box(x, y, w, h)
+
+    def spark(self, x, y, w, h, values, colour):
+        """The history of a reading as a line, the newest at the right, over a faint fill. `values` run from 0 to 1,
+        newest first. A line through many points is many short ones, and its fill is a column under each."""
+        heights = [clamp(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0 for v in values or []]
+        if len(heights) < 2 or w <= 0 or h <= 4:
+            return
+        step = w / (len(heights) - 1)
+        points = [(x + w - i * step, y + h - 2 - v * (h - 4)) for i, v in enumerate(heights)]
+        with self.clip(x, y, w, h):
+            for (x1, y1), (x0, y0) in zip(points, points[1:]):
+                top = (y0 + y1) / 2
+                self.rect(x0, top, step, y + h - top, colour, 0.13)
+            self.lines([(x0, y0, x1, y1) for (x1, y1), (x0, y0) in zip(points, points[1:])], colour, 1.5)
+
+    def keep(self, slot, key, draw):
+        """What `draw()` paints, kept as one node for as long as `key` stays the same: for the parts of a loop that
+        are still while others move. They are then not built again for every frame, and a node that is the same
+        from one frame to the next tells GTK that nothing changed there. `slot` names the place; it holds one
+        node, whatever it has shown before."""
+        held = self.stamps.get(("node", slot))
+        if held is None or held[0] != key:
+            outer, self.snap = self.snap, Gtk.Snapshot()
+            try:
+                draw()
+                node = self.snap.to_node()
+            finally:
+                self.snap = outer
+            held = self.stamps[("node", slot)] = (key, node)
+        if held[1] is not None:
+            self.snap.append_node(held[1])
+
+    def sprite(self, texture, x, y, w, h, alpha=1.0):
+        """A picture stretched over a box."""
+        if alpha > 0 and w > 0 and h > 0:
+            with self.opacity(alpha) if alpha < 1 else contextlib.nullcontext():
+                self.snap.append_texture(texture, _rect(x, y, w, h))
+
+    def cover(self, texture, x, y, w, h, zoom=1.0, fx=0.5, fy=0.5, alpha=1.0):
+        """A picture filling the box and cut to it, laid as cover_box() says. Returns that, so that a point of the
+        picture can be found on screen."""
+        lay = cover_box(texture.get_width(), texture.get_height(), x, y, w, h, zoom, fx, fy)
+        if alpha > 0 and w > 0 and h > 0:
+            with self.clip(x, y, w, h), self.opacity(alpha) if alpha < 1 else contextlib.nullcontext():
+                self.snap.append_texture(texture, _rect(*lay))
+        return lay
+
     def radial(self, x, y, r, colour, alpha):
         """A glow: `alpha` at the centre, nothing at r."""
         if r <= 0 or alpha <= 0:
@@ -345,6 +426,35 @@ class Kit:
     def clip_out_para(self, p0, p1, p3):
         """Everything but this parallelogram (corners as in para())."""
         return self._cut(lambda: self.para(p0, p1, p3, d.INK))
+
+    @contextlib.contextmanager
+    def screen_blend(self, ground):
+        """What is painted inside is screened onto what `ground()` paints: black adds nothing, light adds light. A
+        blend cannot see what lies under it, so the ground is painted again inside it."""
+        self.snap.push_blend(Gsk.BlendMode.SCREEN)
+        ground()
+        self.snap.pop()                              # the ground is recorded; what follows goes on top of it
+        try:
+            yield
+        finally:
+            self.snap.pop()
+
+    @contextlib.contextmanager
+    def soft_band(self, cx, half, y0, y1):
+        """What is painted inside shows only in an upright band: whole at cx, nothing at cx - half and cx + half."""
+        self.snap.push_mask(Gsk.MaskMode.ALPHA)
+        if half > 0 and y1 > y0:
+            stops = []
+            for offset, strength in ((0.0, 0.0), (0.5, 1.0), (1.0, 0.0)):
+                stop = Gsk.ColorStop()
+                stop.offset, stop.color = offset, _rgba((1.0, 1.0, 1.0, 1.0), strength)
+                stops.append(stop)
+            self.snap.append_linear_gradient(_rect(cx - half, y0, 2 * half, y1 - y0), _point(cx - half, y0), _point(cx + half, y0), stops)
+        self.snap.pop()                              # the mask is recorded; what follows is what it lets through
+        try:
+            yield
+        finally:
+            self.snap.pop()
 
     @contextlib.contextmanager
     def opacity(self, alpha):

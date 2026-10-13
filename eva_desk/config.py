@@ -114,6 +114,21 @@ DEFAULTS = {
         "track": True,            # a card in a corner when a new track starts playing
         "track_corner": "bottom-left",   # or "bottom-right"
     },
+    "ambient": {                  # the loops: what moves while nothing happens
+        "fps": 30,                # how often they repaint, a second
+        "wallpaper": True,        # main monitors: the daemon draws the wallpaper itself and moves it
+        "drift": 8,               # how far the picture pushes in, percent; 0 = still
+        "lap": 30,                # seconds for one push-in and back
+        "ripples": True,          # a ring of hexagons spreading over the picture now and then
+        "embers": True,           # small specks rising
+        "wall": True,             # a status wall on a monitor that is not a main one, while it holds no window
+        "wall_monitor": "",       # its connector (DP-2) or part of its description; empty = the first monitor that is not a main one
+    },
+    "standby": {                  # the loop that covers every monitor when you are away
+        "enabled": True,
+        "minutes": 5,             # without input; 0 = only by `eva-ctl standby`
+        "idle": "hypridle",       # what counts the minutes: hypridle, run by the daemon; or "none": your own idle tool calls eva-ctl standby on
+    },
     "hyprland": {
         "maximize_bind": ["SUPER + RETURN"],   # one key or a list; fills the screen under the bar
         "launcher_bind": "SUPER + Space",

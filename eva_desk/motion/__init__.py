@@ -47,7 +47,8 @@ def available():
 
 
 def pieces():
-    """Every piece by name. Imported here, when asked, so that importing the package stays cheap."""
+    """Every sequence by name: the pieces that end, which is what `eva-ctl play` may be handed. Imported here,
+    when asked, so that importing the package stays cheap."""
     from .seq.berserk import Berserk
     from .seq.boot import Boot
     from .seq.card import Card
@@ -55,3 +56,16 @@ def pieces():
     from .seq.track import Track
     from .seq.wake import Wake
     return {"card": Card, "shaft": Shaft, "boot": Boot, "wake": Wake, "berserk": Berserk, "track": Track}
+
+
+def loops():
+    """Every loop by name: the pieces with no end, which an ambient layer hosts."""
+    from .amb.standby import StandbyLoop
+    from .amb.wall import WallLoop
+    from .amb.wallpaper import WallpaperLoop
+    return {"standby": StandbyLoop, "wallpaper": WallpaperLoop, "wall": WallLoop}
+
+
+def everything():
+    """The sequences and then the loops: what the offline renderer draws."""
+    return {**pieces(), **loops()}

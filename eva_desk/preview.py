@@ -139,11 +139,11 @@ def render_all(cfg, out, w=3440, h=1440):
 
 def motion_stills(out, w, h):
     """motion_NAME.png for every motion piece: the frame it names as its still, over a stand-in desk."""
-    from .motion import pieces, render
+    from .motion import everything, render
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     made = []
-    for name, cls in pieces().items():
+    for name, cls in everything().items():
         piece = cls()
         made.append(out / f"motion_{name}.png")
         render.over_desk(render.frame(piece, piece.still, w, h, render.fixture_ctx())).write_to_png(str(made[-1]))

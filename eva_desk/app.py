@@ -77,8 +77,9 @@ class App(Gtk.Application):
         if cfg["bar"]["enabled"]:
             from .audio import Volume
             self.volume = Volume(self._on_volume)
-        if (cfg["bar"]["enabled"] and cfg["bar"]["resources"]) or int(cfg["overlays"].get("berserk", 0) or 0) > 0:
-            from .resources import Sampler                   # the bar's tags, and the load that turns the desk berserk
+        if (cfg["bar"]["enabled"] and cfg["bar"]["resources"]) or int(cfg["overlays"].get("berserk", 0) or 0) > 0 \
+                or cfg["standby"]["enabled"]:
+            from .resources import Sampler                   # the bar's tags, the load that turns the desk berserk, standby's readings
             self.sampler = Sampler()
             self._resources()
             GLib.timeout_add_seconds(max(1, int(cfg["bar"]["resource_seconds"])), self._resources)
@@ -94,6 +95,8 @@ class App(Gtk.Application):
                 self.overlays["eyecatch"] = O.Eyecatch(self, cfg)
             if ov.get("alarm_band"):
                 self.overlays["alarm"] = O.AlarmBand(self, cfg)
+            if ov.get("alarm_band") or cfg["standby"]["enabled"]:
+                self.notices = O.NotifyWatch(self._on_critical)      # a critical notification raises the band and ends standby
             if ov.get("alttab"):
                 self.overlays["alttab"] = O.AltTab(self, cfg)
             if ov.get("power"):
@@ -119,6 +122,32 @@ class App(Gtk.Application):
                 print("eva-desk: motion needs GTK 4.10 or newer", flush=True)
         except Exception:
             traceback.print_exc()
+        self.standby = self.idle = None                  # the loop for when nobody is there, and the child that counts the idle minutes
+        try:
+            if self.motion is not None and cfg["standby"]["enabled"]:
+                from .motion.player import Standby
+                self.standby = Standby(self, fps=self._ambient_fps())
+                self.standby.on_end = self._standby_ended
+                self._start_idle()
+        except Exception:
+            traceback.print_exc()
+        self.living = None                               # the wallpaper the daemon draws itself, on the main monitors
+        self.ambient_off = self.asleep = self.session_locked = False       # what makes the loops stand still, besides Hyprland's state
+        try:
+            if self.motion is not None and self.walls is not None and cfg["ambient"]["wallpaper"]:
+                from .motion.living import Living
+                self.living = Living(self, cfg)
+                self.living.on_failed = self._living_failed
+                self.walls.living = self._living_show
+        except Exception:
+            traceback.print_exc()
+        self.wall, self.wall_tags = None, []             # the status wall on a monitor that is not a main one
+        try:
+            if self.motion is not None and cfg["ambient"]["wall"]:
+                from .motion.sidewall import SideWall
+                self.wall = SideWall(self, cfg, state=self._wall_state)
+        except Exception:
+            traceback.print_exc()
         self.frames, self.frame_gdk = {}, {}
         self.last_pull = 0.0
         self.ipc = ipc.Server(self.command)
@@ -127,6 +156,10 @@ class App(Gtk.Application):
         try:
             self._boot()
         except Exception:                                # the desk comes up with or without its sequence
+            traceback.print_exc()
+        try:
+            self._ambient_sync()                         # a game may be open already: the loops start out standing still
+        except Exception:
             traceback.print_exc()
         self._watch_sleep()
         self._later(2000, self._watch_lock)
@@ -168,18 +201,24 @@ class App(Gtk.Application):
 
     def _run_refresh(self):
         self.refresh_id = None
+        self.last_desk = None                                # (monitors, clients) as this refresh got them, if it got that far
         try:
             self.refresh()
             if not getattr(self, "boot_done", True):         # the boot is still waiting for a monitor to play on
                 self._boot()
         except Exception:
             traceback.print_exc()
+        for check in (self._standby_check, lambda: self._ambient_sync(self.last_desk)):      # whatever became of the refresh:
+            try:                                                                             # these do not wait for the next
+                check()
+            except Exception:
+                traceback.print_exc()
         return False
 
     def _covered(self):
-        """A sequence that covers the screen is playing: nothing else is drawn over it."""
-        motion = getattr(self, "motion", None)
-        return motion is not None and motion.busy
+        """A sequence that covers the screen is playing, or standby is up: nothing else is drawn over it."""
+        motion, standby = getattr(self, "motion", None), getattr(self, "standby", None)
+        return (motion is not None and motion.busy) or (standby is not None and standby.up)
 
     def _spawn_pulse(self, address):
         """A hexagon pulse where a new window landed (main monitors only, never over a game or a launch sequence)."""
@@ -222,6 +261,9 @@ class App(Gtk.Application):
             self.berserk = want
             for st in self.stages.values():
                 st.set_berserk(want)
+            for loops in (getattr(self, "living", None), getattr(self, "wall", None)):
+                if loops is not None:
+                    loops.set_berserk(want)
             self.prev = {k: {**v, "scene": None} for k, v in self.prev.items()}   # re-show with the entrance
             self.schedule(0)
             if want:
@@ -270,11 +312,19 @@ class App(Gtk.Application):
                 if name in self.bars:
                     self.bars.pop(name).destroy()
                 self.prev.pop(name, None)
+                walls = getattr(self, "walls", None)
+                if walls is not None:
+                    if name in gdk and name not in want and walls.current.get(name):
+                        walls.direct(name, walls.current[name])      # still there, no longer a main monitor: awww shows what it showed
+                    walls.forget(name)                       # whatever it showed, the next refresh sets it again
         for name in want:
             self.gdk_of[name] = gdk[name]
             if name not in self.stages:
                 from .stage import Stage
                 self.stages[name] = Stage(self, gdk[name], name, self.cfg)
+                self.prev.pop(name, None)                    # new here, as far as GTK goes: its wallpaper is set again, so that
+                if getattr(self, "walls", None) is not None:     # one that went to awww while GTK did not know the monitor comes over
+                    self.walls.forget(name)
             if name not in self.bars and self.cfg["bar"]["enabled"]:
                 from .bar import Bar
                 b = Bar(self, gdk[name], name, self.cfg, self.hypr)
@@ -286,6 +336,10 @@ class App(Gtk.Application):
         self._sync_frames(gdk)
         if getattr(self, "motion", None) is not None:
             self.motion.forget(gdk.values())                 # the players of monitors that went away
+        if getattr(self, "living", None) is not None:
+            self.living.forget(want)                         # a wallpaper layer only on what is a main monitor now
+        if getattr(self, "standby", None) is not None:
+            self.standby.forget(gdk.values())                # and no standby layer kept for a monitor that is gone
 
     def _sync_frames(self, gdk):
         """One window frame per enabled monitor (the side monitor too, not only the mains), keyed
@@ -309,6 +363,7 @@ class App(Gtk.Application):
         clients = self.hypr.j("clients") or []
         wss = self.hypr.j("workspaces") or []
         active = self.hypr.j("activewindow") or {}
+        self.last_desk = (mons, clients)
         mains = self.main_monitors(mons)
         self._sync_components(mains)
         ignore = cfg["figures"]["ignore_classes"]
@@ -388,6 +443,7 @@ class App(Gtk.Application):
             for m in mons:
                 if m["name"] not in main_names:
                     self.walls.set_static(m["name"], m.get("description", ""))
+        self._wall_sync(mons, clients, wss, mains)
 
     def _check_side(self, mon, sides):
         """Log (once per window) when a docked side window is not where the stage column is."""
@@ -414,6 +470,9 @@ class App(Gtk.Application):
 
     # ---------------------------------------------------------------- periodic
     def _clock(self):
+        idle = getattr(self, "idle", None)
+        if idle is not None and idle.gone():
+            print("eva-desk: hypridle has exited: standby only by eva-ctl standby on", flush=True)
         active = frozenset(b.get("name") for b in self.cfg["bar"].get("buttons", [])
                            if b.get("active_file") and os.path.exists(os.path.expandvars(os.path.expanduser(b["active_file"]))))
         for b in self.bars.values():
@@ -612,6 +671,10 @@ class App(Gtk.Application):
         cmd = self.cfg["power"].get("lock", "")
         if not cmd:
             return "no lock command"
+        try:
+            self.standby_off(at_once=True)                   # it holds the keyboard the lock screen is about to want
+        except Exception:                                    # the lock screen comes, whatever became of that
+            traceback.print_exc()
         self.hypr.exec(cmd)
         return "ok"
 
@@ -628,13 +691,22 @@ class App(Gtk.Application):
         up. When the session is locked, however that came about, the wake sequence goes up under the lock screen,
         held on its first frame, so that the lock screen fades onto that cover and not onto the desk; when it
         unlocks, the sequence plays. The daemon only watches: it never starts, stops or waits on a locker here.
-        Nothing may end this watch or leave the cover up, so every failure takes the cover down and looks again."""
-        if getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
+        Nothing may end this watch or leave the cover up, so every failure takes the cover down and looks again.
+        Standby ends when the session locks and the loops stand still, so the watch also runs for their sake, with
+        no cover, when wake is off."""
+        wake = self.cfg["motion"]["wake"]
+        if getattr(self, "motion", None) is None or not (wake or self._has_loops()):
             return
         watch = self.lock_watch
         try:
             locked = self._locked()
-            verdict = watch.tick(time.monotonic() if now is None else now, locked)
+            if locked:
+                self.standby_off(at_once=True)
+            if locked is not None and bool(locked) != getattr(self, "session_locked", False):       # the loops stand still under a lock
+                # screen; an answer that did not come changes nothing: it is not an unlock
+                self.session_locked = bool(locked)
+                self._ambient_sync()
+            verdict = watch.tick(time.monotonic() if now is None else now, locked) if wake else "idle"
             if verdict in ("cover", "hold") and locked:      # a cover on every main monitor, one that came back included
                 from .motion.seq.wake import Wake
                 for gdk in self._mains_gdk():
@@ -656,6 +728,10 @@ class App(Gtk.Application):
 
     def _on_sleep(self, sleeping):
         """logind's PrepareForSleep: True before the machine sleeps, False when it is back."""
+        if sleeping:
+            self.standby_off(at_once=True)                   # the desk it wakes to is the desk, or the lock screen
+        self.asleep = bool(sleeping)
+        self._ambient_sync()
         if sleeping or getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
             return
         if self.lock_watch.covered or self._locked():        # back onto a lock screen: its closing plays the sequence
@@ -665,8 +741,8 @@ class App(Gtk.Application):
             self._play(Wake(), gdk)
 
     def _watch_sleep(self):
-        """Hear logind say the machine is back from sleep."""
-        if getattr(self, "motion", None) is None or not self.cfg["motion"]["wake"]:
+        """Hear logind say the machine goes to sleep and is back from it."""
+        if getattr(self, "motion", None) is None or not (self.cfg["motion"]["wake"] or self._has_loops()):
             return
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
@@ -677,6 +753,193 @@ class App(Gtk.Application):
             self.system_bus = bus
         except GLib.Error:
             print("eva-desk: no system bus: no wake sequence after sleep", flush=True)
+
+    # ---------------------------------------------------------------- standby
+    def _standby_inputs(self):
+        """What the standby loop shows. It is asked at every repaint, so it asks Hyprland nothing."""
+        now = time.time()
+        local = time.localtime(now)
+        return {"clock": time.strftime("%H:%M", local), "second": min(59.999, local.tm_sec + now % 1),
+                "date": time.strftime("%a %d %b", local).upper(), "readings": triggers.readings(getattr(self, "res_state", None))}
+
+    def _standby_blocked(self):
+        """Why standby may not be up right now, in words; "" when it may."""
+        try:
+            why = triggers.standby_blocked(self.hypr.j("monitors"), self.hypr.j("clients"),
+                                           self.cfg["figures"]["ignore_classes"], self._locked())
+        except (OSError, RuntimeError, ValueError):
+            return "Hyprland does not answer"
+        return {"locked": "the session is locked", "game": "a game is open", "fullscreen": "a window is fullscreen"}.get(why, "")
+
+    def standby_on(self):
+        """Cover every monitor with the standby loop, unless something stands in its way. The answer says what."""
+        if getattr(self, "motion", None) is None:
+            return "motion is not available"
+        standby = getattr(self, "standby", None)
+        if standby is None:
+            return "standby is off ([standby] enabled)"
+        if standby.up:
+            return "ok"
+        why = self._standby_blocked()
+        if why:
+            return f"not now: {why}"
+        from .gtkutil import monitors
+        from .motion.amb.standby import StandbyLoop
+        everywhere = list(monitors().values())               # every monitor GTK knows, not only the main ones
+        if not everywhere:
+            return "no monitor"
+        modals = [getattr(self, "launcher", None)] + [getattr(self, "overlays", {}).get(name) for name in ("power", "alttab")]
+        for modal in modals:                                 # they hold the keyboard, and so will standby
+            if modal is not None and getattr(modal, "visible", False):
+                modal.hide()
+        self.close_panels()
+        self.motion.stop()
+        loop = getattr(self, "standby_loop", None)           # one for the daemon's life: what it cannot find it says once
+        if loop is None:
+            loop = self.standby_loop = StandbyLoop()
+        if not standby.start(loop, everywhere, self._standby_inputs):
+            return "could not start (see the log)"
+        self._ambient_sync()                                 # nobody sees the loops under it
+        return "ok"
+
+    def _standby_ended(self):
+        self._update_frames()
+        self._ambient_sync()
+
+    def standby_off(self, at_once=False):
+        """End standby: with its fold, or at once. Nothing when it is not up."""
+        standby = getattr(self, "standby", None)
+        if standby is not None:
+            standby.end(at_once)
+        return "ok"
+
+    def _standby_check(self):
+        """While standby is up: what would keep it from starting ends it, and so does a monitor that came or went
+        (it would be left uncovered). At once, with no fold: none of these is someone coming back."""
+        standby = getattr(self, "standby", None)
+        if standby is None or not standby.up:
+            return
+        from .gtkutil import monitors
+        if set(standby.monitors()) != set(monitors().values()) or self._standby_blocked():
+            standby.end(at_once=True)
+
+    def _on_critical(self, note):
+        """A critical notification: the EMERGENCY band shows it, and nobody is left looking at a clock."""
+        band = getattr(self, "overlays", {}).get("alarm")
+        try:
+            if band is not None:
+                band.show(note)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            self.standby_off()
+
+    # ---------------------------------------------------------------- the loops: the living wallpaper
+    def _has_loops(self):
+        """Standby or an ambient loop exists: something follows the session's lock state and the machine's sleep."""
+        return any(getattr(self, name, None) is not None for name in ("standby", "living", "wall"))
+
+    def _wall_state(self):
+        """What the status wall shows of the desk: the workspaces and the playing track."""
+        return {"workspaces": getattr(self, "wall_tags", []), "music": getattr(self, "music_state", None)}
+
+    def _wall_sync(self, mons, clients, wss, mains):
+        """Put the status wall up on its monitor while that holds no window, and take it down when it does."""
+        wall = getattr(self, "wall", None)
+        if wall is None:
+            return
+        from .gtkutil import monitors
+        name = triggers.wall_monitor(mons, {m["name"] for m in mains}, str(self.cfg["ambient"].get("wall_monitor") or ""))
+        mon = next((m for m in mons if m.get("name") == name), None)
+        active = next(((m.get("activeWorkspace") or {}).get("id") for m in mons if m.get("focused")), None)
+        occupied = {w.get("id") for w in wss if w.get("windows", 0) > 0}
+        count = min(10, int(self.cfg["bar"]["workspaces"]))
+        self.wall_tags = [(n, "active" if n == active else "occupied" if n in occupied else "empty") for n in range(1, count + 1)]
+        wall.sync(name, monitors().get(name) if mon is not None and triggers.workspace_empty(mon, clients) else None)
+
+    def _living_show(self, name, target):
+        """Wallpapers hands a main monitor's wallpaper over; False sends it to awww after all. The monitor is the
+        one GTK has under that name now: one kept from before a replug has no window any more."""
+        living = getattr(self, "living", None)
+        if living is None:
+            return False
+        from .gtkutil import monitors
+        gdk = monitors().get(name)
+        return bool(gdk is not None and living.show(name, gdk, target))
+
+    def _living_failed(self, name, target):
+        """The wallpaper layer could not read that picture and has given the monitor back: awww shows it."""
+        if getattr(self, "walls", None) is not None:
+            self.walls.direct(name, target)
+
+    def _ambient_sync(self, desk=None):
+        """Tell the loops on which monitors they stand still (triggers.paused_monitors). `desk` is (monitors,
+        clients) when the caller has just asked Hyprland for them. What stops them everywhere (a lock, sleep,
+        standby, `ambient off`) needs no asking. When Hyprland does not answer they stay as they are, and it is
+        asked again in a second: a game may have opened meanwhile."""
+        loops = [host for host in (getattr(self, "living", None), getattr(self, "wall", None)) if host is not None]
+        if not loops:
+            return
+        standby = getattr(self, "standby", None)
+        if (getattr(self, "session_locked", False) or getattr(self, "asleep", False) or getattr(self, "ambient_off", False)
+                or (standby is not None and standby.up)):
+            for host in loops:
+                host.pause(set(), everything=True)
+            return
+        try:
+            mons, clients = desk if desk is not None else (self.hypr.j("monitors"), self.hypr.j("clients"))
+            paused = triggers.paused_monitors(mons, clients, self.cfg["figures"]["ignore_classes"])
+        except (OSError, RuntimeError, ValueError):
+            if not getattr(self, "sync_owed", False):
+                self.sync_owed = True
+                self._later(1000, self._sync_again)
+            return
+        for host in loops:
+            host.pause(paused)
+
+    def _sync_again(self):
+        self.sync_owed = False
+        self._ambient_sync()
+
+    def _start_idle(self):
+        """Run hypridle on a config that calls `eva-ctl standby on` after the minutes of [standby]."""
+        st = self.cfg["standby"]
+        try:
+            minutes = float(st.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0.0
+        import shutil
+        from .sources import idle
+        ctl = config.ROOT / "bin" / "eva-ctl"
+        ctl = str(ctl) if ctl.exists() else shutil.which("eva-ctl")
+        if not st.get("enabled") or getattr(self, "standby", None) is None or st.get("idle") != "hypridle" or minutes <= 0 or not ctl:
+            if st.get("enabled") and st.get("idle") == "hypridle" and minutes > 0 and not ctl:
+                print("eva-desk: eva-ctl is not on PATH: standby only by command", flush=True)
+            idle.end_stale(config.STATE_DIR)                 # none of its own this time: one left by a daemon that had one still goes
+            return
+        self.idle = idle.Idle(minutes, ctl, config.STATE_DIR)
+        self.idle.start()
+
+    def _ambient_fps(self):
+        """[ambient] fps as a number between 1 and 120; 30 for what is not a number."""
+        try:
+            fps = int(float(self.cfg["ambient"].get("fps")))
+        except (TypeError, ValueError):
+            fps = 30
+        return max(1, min(120, fps))
+
+    def _stop_children(self):
+        """End what the daemon runs beside itself, before it quits or starts itself again."""
+        idle, self.idle = getattr(self, "idle", None), None
+        if idle is not None:
+            try:
+                idle.stop()
+            except Exception:
+                traceback.print_exc()
+
+    def do_shutdown(self):
+        self._stop_children()
+        Gtk.Application.do_shutdown(self)
 
     def _trial(self, name, text):
         """The inputs `eva-ctl play NAME [TEXT]` shows a piece with."""
@@ -751,6 +1014,8 @@ class App(Gtk.Application):
             names = motion.pieces()
             if not args:
                 return "play: " + " | ".join(names)
+            if args[0] in motion.loops():                  # a loop has no end: the sequence player would never let go of it
+                return f"{args[0]} is a loop: eva-ctl {args[0]} on"
             if args[0] not in names:
                 return f"unknown piece: {args[0]} ({', '.join(names)})"
             if getattr(self, "motion", None) is None:
@@ -759,6 +1024,17 @@ class App(Gtk.Application):
             return "ok"
         if cmd == "lock":                                  # the lock screen, started so that the wake sequence can follow it
             return self.lock()
+        if cmd == "standby":                               # the idle loop: what the idle timer calls, and a way to try it
+            if args[:1] in ([], ["on"]):
+                return self.standby_on()
+            return self.standby_off() if args[0] == "off" else "standby: on | off"
+        if cmd == "ambient":                               # what moves by itself: stop it, start it, or say which
+            if args and args[0] not in ("on", "off"):
+                return "ambient: on | off"
+            if args:
+                self.ambient_off = args[0] == "off"
+                self._ambient_sync()
+            return "ambient off" if getattr(self, "ambient_off", False) else "ambient on"
         if cmd == "eyecatch":
             o = self.overlays.get("eyecatch")
             if not o:
@@ -801,6 +1077,7 @@ class App(Gtk.Application):
         return f"unknown command: {cmd}"
 
     def _restart(self):
+        self._stop_children()                                # the new daemon starts its own: there must never be two
         os.execv(sys.executable, [sys.executable, "-m", "eva_desk"] + self.argv)
 
 

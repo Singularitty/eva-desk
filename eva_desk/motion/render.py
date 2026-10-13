@@ -3,6 +3,7 @@
 A frame is built the way the player builds it, as a GTK snapshot, and then drawn through cairo
 (`node.draw`), which GTK can do without a compositor. So what these files show is what the desk will show.
 """
+import math
 import shutil
 import subprocess
 import time
@@ -10,23 +11,57 @@ from pathlib import Path
 
 import cairo
 
-from .. import gtkutil  # noqa: F401  (pins GTK 4 before any gi.repository import)
+from .. import gtkutil  # (pins GTK 4 before any gi.repository import)
 
 from gi.repository import Gtk  # noqa: E402
 
 from .. import draw as d  # noqa: E402
-from . import pieces  # noqa: E402
+from . import everything  # noqa: E402
 from .kit import Kit  # noqa: E402
 
 CELL = 860             # a frame on a contact sheet is at most this wide
 
 
+_stand_in = None
+
+
+def stand_in():
+    """A picture for the wallpaper's offline frames: nobody's wallpaper, only something whose motion shows."""
+    global _stand_in
+    if _stand_in is None:
+        def paint(cr):
+            fall = cairo.LinearGradient(0, 0, 0, 720)
+            fall.add_color_stop_rgb(0, *d.col("wine")[:3])
+            fall.add_color_stop_rgb(1, *d.INK[:3])
+            cr.set_source(fall)
+            cr.paint()
+            d.rgba(cr, d.BONE, 0.10)
+            for x in range(0, 1720, 86):                                   # a grid, so that a push-in and a pan can be seen
+                cr.rectangle(x, 0, 2, 720)
+            for y in range(0, 720, 86):
+                cr.rectangle(0, y, 1720, 2)
+            cr.fill()
+            d.rgba(cr, d.CLARET, 0.55)
+            cr.rectangle(1118, 172, 344, 258)
+            cr.fill()
+        _stand_in = gtkutil.render_texture(1720, 720, paint)
+    return _stand_in
+
+
 def fixture_ctx():
     """The inputs every offline render uses, so two runs give the same frames."""
-    return {"app": "FIREFOX", "workspace": 2, "clock": "22:44",
+    return {"picture": stand_in(), "drift": 0.08, "lap": 30.0, "ripples": True, "embers": True,       # the wallpaper
+            "app": "FIREFOX", "workspace": 2, "clock": "22:44",
             "outputs": ["3440×1440", "1080×1920"], "hyprland": "0.56", "lua": True, "net": "lan",       # boot
             "load": "CPU 97%", "seconds": 30,                                                          # berserk
-            "title": "Walking on a Dream", "artist": "Empire of the Sun", "corner": "bottom-left"}     # the track card
+            "title": "Walking on a Dream", "artist": "Empire of the Sun", "corner": "bottom-left",     # the track card
+            "second": 37.0, "date": "TUE 13 OCT",                                                      # the loops' clock
+            "readings": ["MAGI·1 CPU 07%", "MAGI·2 RAM 9.8G", "MAGI·3 LAN ↓340K"],
+            "uptime": "04:12", "net": "lan", "music": {"status": "Playing", "title": "Walking on a Dream", "artist": "Empire of the Sun"},
+            "magi": [{"value": 0.07, "label": "07%", "series": [0.07 + 0.3 * abs(math.sin(i / 7)) for i in range(61)]},       # the wall
+                     {"value": 0.52, "label": "9.8G", "series": [0.5 + 0.02 * math.sin(i / 9) for i in range(61)]},
+                     {"value": 0.30, "label": "↓340K", "series": [abs(math.sin(i / 3)) ** 3 for i in range(61)]}],
+            "workspaces": [(n, "active" if n == 2 else "occupied" if n in (1, 3, 7) else "empty") for n in range(1, 11)]}
 
 
 def parse_size(text):
@@ -127,8 +162,9 @@ def write(name, piece, out_dir, w, h, fps, ctx):
 
 
 def render_motion(out, only=None, size=(1720, 720), fps=30):
-    """Every piece (or the one named) as a contact sheet and an mp4 in `out`. KeyError for an unknown name."""
-    known = pieces()
+    """Every piece (or the one named) as a contact sheet and an mp4 in `out`; a loop for one lap. KeyError for an
+    unknown name."""
+    known = everything()
     if only is not None and only not in known:
         raise KeyError(only)
     w, h = size

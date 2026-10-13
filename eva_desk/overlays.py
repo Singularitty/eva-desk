@@ -219,12 +219,13 @@ class _View(Gtk.Widget):
 
 
 class _Overlay:
-    """A full-monitor surface on the overlay layer with a tick animation and a cairo texture cache."""
+    """A full-monitor surface, on the overlay layer unless another is named, with a tick animation and a cairo
+    texture cache."""
 
     def __init__(self, app, namespace, keyboard="none", passthrough=True, anchors=("top", "bottom", "left", "right"),
-                 height=None, margins=None):
+                 height=None, margins=None, layer="overlay"):
         self.app = app
-        self.win = layer_window(app, None, "overlay", namespace, anchors=anchors, keyboard=keyboard,
+        self.win = layer_window(app, None, layer, namespace, anchors=anchors, keyboard=keyboard,
                                 passthrough=passthrough, height=height, exclusive=-1)
         if margins:
             from gi.repository import Gtk4LayerShell as LS
@@ -354,8 +355,53 @@ class Eyecatch(_Overlay):
             snap.restore()
 
 
+class NotifyWatch:
+    """Hears critical notifications: it watches org.freedesktop.Notifications.Notify on the session bus and calls
+    on_critical({"app", "summary", "body"}) for every one of urgency 2. The EMERGENCY band shows them, and one
+    ends standby, so the watch belongs to neither."""
+
+    def __init__(self, on_critical):
+        self.on_critical = on_critical
+        self.conn = None
+        GLib.idle_add(self._watch)
+
+    def _watch(self):
+        try:
+            addr = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
+            flags = Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
+            self.conn = Gio.DBusConnection.new_for_address_sync(addr, flags, None, None)
+            self.conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.Monitoring",
+                                "BecomeMonitor", GLib.Variant("(asu)", (["interface='org.freedesktop.Notifications',member='Notify',type='method_call'"], 0)),
+                                None, Gio.DBusCallFlags.NONE, -1, None)
+            self.conn.add_filter(self._filter)
+        except GLib.Error as e:
+            print("eva-desk: cannot watch notifications:", e, flush=True)
+        return False
+
+    def _filter(self, conn, message, incoming):
+        try:
+            if incoming and message.get_member() == "Notify" and message.get_interface() == "org.freedesktop.Notifications":
+                body = message.get_body()
+                if body is not None and body.n_children() >= 7:
+                    app_name, _, _, summary, text, _, hints = body.unpack()[:7]
+                    urgency = hints.get("urgency", 1) if isinstance(hints, dict) else 1
+                    if int(urgency) >= 2:
+                        GLib.idle_add(self._tell, {"app": str(app_name), "summary": str(summary), "body": str(text)})
+        except Exception as e:                                 # a monitor must never raise
+            print("eva-desk: notification", e, flush=True)
+        return message
+
+    def _tell(self, note):
+        try:
+            self.on_critical(note)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        return False
+
+
 class AlarmBand:
-    """A band under the bar for critical notifications (watches org.freedesktop.Notifications.Notify)."""
+    """A band under the bar for critical notifications (the daemon hands them over from its NotifyWatch)."""
 
     HEIGHT = 70
 
@@ -372,34 +418,6 @@ class AlarmBand:
         click.connect("pressed", self._click)
         self.ov.view.add_controller(click)
         self.hide_id = None
-        self.conn = None
-        GLib.idle_add(self._watch)
-
-    def _watch(self):
-        try:
-            addr = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
-            flags = Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
-            self.conn = Gio.DBusConnection.new_for_address_sync(addr, flags, None, None)
-            self.conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.Monitoring",
-                                "BecomeMonitor", GLib.Variant("(asu)", (["interface='org.freedesktop.Notifications',member='Notify',type='method_call'"], 0)),
-                                None, Gio.DBusCallFlags.NONE, -1, None)
-            self.conn.add_filter(self._filter)
-        except GLib.Error as e:
-            print("eva-desk: alarm band cannot watch notifications:", e, flush=True)
-        return False
-
-    def _filter(self, conn, message, incoming):
-        try:
-            if incoming and message.get_member() == "Notify" and message.get_interface() == "org.freedesktop.Notifications":
-                body = message.get_body()
-                if body is not None and body.n_children() >= 7:
-                    app_name, _, _, summary, text, _, hints = body.unpack()[:7]
-                    urgency = hints.get("urgency", 1) if isinstance(hints, dict) else 1
-                    if int(urgency) >= 2:
-                        GLib.idle_add(self.show, {"app": str(app_name), "summary": str(summary), "body": str(text)})
-        except Exception as e:                                 # a monitor must never raise
-            print("eva-desk: alarm band message", e, flush=True)
-        return message
 
     def show(self, note):
         gdk = self.app.focused_gdk()

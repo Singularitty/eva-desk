@@ -1,8 +1,10 @@
-"""Per-workspace wallpapers through awww (or swww): fixed ones per workspace, the rest from a pool."""
+"""Per-workspace wallpapers: fixed ones per workspace, the rest from a pool. They go to awww (or swww), or to the
+daemon's own wallpaper layer where that is on (`living`)."""
 import random
 import shutil
 import subprocess
 import time
+import traceback
 
 from .config import asset
 
@@ -18,6 +20,7 @@ class Wallpapers:
                 break
         self.current = {}
         self.assign = {}
+        self.living = None            # (monitor, target) -> whether the daemon's own wallpaper layer took it
         self.shuffle()
 
     @property
@@ -52,7 +55,7 @@ class Wallpapers:
         return self.pool[(ws_id - 1) % len(self.pool)]
 
     def set_for(self, monitor, ws_id, ws_name, force=False):
-        if not self.ok:
+        if not self.cfg["enabled"]:
             return
         value = self.choice(ws_id, ws_name)
         if not value:
@@ -61,6 +64,21 @@ class Wallpapers:
         if not force and self.current.get(monitor) == target:
             return
         self.current[monitor] = target
+        try:
+            if self.living is not None and self.living(monitor, target):  # the daemon draws this monitor's wallpaper itself
+                return
+        except Exception:                                    # a hand-over that fails is a hand-over refused
+            traceback.print_exc()
+        self.direct(monitor, target)
+
+    def forget(self, monitor):
+        """What that monitor shows is not known any more (it was unplugged): the next set_for applies again."""
+        self.current.pop(monitor, None)
+
+    def direct(self, monitor, target):
+        """A wallpaper through awww: a picture, or "#rrggbb"."""
+        if not self.ok:
+            return
         if target.startswith("#"):
             cmd = [self.bin, "clear", "-o", monitor, target.lstrip("#")]
         else:

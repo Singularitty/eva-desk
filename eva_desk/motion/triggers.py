@@ -1,4 +1,4 @@
-"""When each motion piece plays: the decisions, as plain functions and two small state machines.
+"""When each motion piece plays: the decisions, as plain functions and a few small state machines.
 
 Nothing here touches GTK, the clock or a file. Hyprland's answers come in as the lists `hyprctl -j` gives and time as
 a number, so every rule can be tested with plain values.
@@ -51,6 +51,76 @@ def track_monitor(monitors, mains):
     mains = [name for name in mains if name in names]
     focused = next((m.get("name") for m in monitors or [] if m.get("focused")), None)
     return focused if focused in mains else (mains[0] if mains else None)
+
+
+def standby_blocked(monitors, clients, patterns, locked):
+    """Why standby may not start, and must end if it is up: "locked", "game", "fullscreen", or "" when nothing
+    stands in its way. `locked` is Hyprland's word on the session; None, when it did not say, blocks nothing."""
+    if locked:
+        return "locked"
+    if game_open(clients, patterns):
+        return "game"
+    if fullscreen_monitors(monitors, clients):
+        return "fullscreen"
+    return ""
+
+
+def paused_monitors(monitors, clients, patterns, locked=False, asleep=False, off=False, standby=False):
+    """The names of the monitors on which the loops stand still. All of them while a game is open anywhere (the
+    loops must cost a game nothing), while the session is locked, the machine is going to sleep, standby covers
+    them, or they were switched off by hand; otherwise the ones that show a fullscreen window."""
+    names = {m.get("name") for m in monitors or [] if m.get("name")}
+    if locked or asleep or off or standby or game_open(clients, patterns):
+        return names
+    return fullscreen_monitors(monitors, clients) & names
+
+
+def wall_monitor(monitors, mains, want):
+    """The name of the monitor the status wall belongs on: the one `want` names (its connector, or part of its
+    description), else the first that is not a main one. None when there is no such monitor: the wall never goes
+    on a main one."""
+    others = [m for m in monitors or [] if m.get("name") and not m.get("disabled") and m["name"] not in mains]
+    if want:
+        return next((m["name"] for m in others if m["name"] == want or want in (m.get("description") or "")), None)
+    return others[0]["name"] if others else None
+
+
+def workspace_empty(monitor, clients):
+    """Whether that monitor shows no window at all: none on its workspace, none on a scratchpad open over it."""
+    if not monitor:
+        return False
+    showing = {ws.get("id") for ws in (monitor.get("activeWorkspace") or {}, monitor.get("specialWorkspace") or {}) if ws.get("id")}
+    return not any((c.get("workspace") or {}).get("id") in showing and c.get("mapped", True) and not c.get("hidden") for c in clients or [])
+
+
+def readings(res):
+    """The sampler's state as the three readings a loop shows; none without it."""
+    if not res or "cpu" not in res:
+        return []
+    try:
+        cpu = round(float(res["cpu"] or 0))                  # the sampler's first answer has no share yet: it needs two looks
+    except (TypeError, ValueError):
+        cpu = 0
+    return [f"MAGI·1 CPU {cpu:02d}%", f"MAGI·2 RAM {res.get('mem') or ''}",
+            f"MAGI·3 {str(res.get('net') or 'net').upper()} ↓{res.get('down') or ''}"]
+
+
+class Travel:
+    """Whether the pointer has really moved: more than LIMIT px from where it last rested. A layer that comes up
+    under a resting pointer is told where it is, and a mouse on a desk that shakes moves a pixel now and then;
+    neither is a hand."""
+
+    LIMIT = 8.0      # px
+    REST = 1.0       # seconds without a report: where it is seen next is where it rests
+
+    def __init__(self):
+        self.origin = self.seen = None
+
+    def moved(self, x, y, now):
+        if self.origin is None or now - self.seen > self.REST:
+            self.origin = (x, y)
+        self.seen = now
+        return (x - self.origin[0]) ** 2 + (y - self.origin[1]) ** 2 > self.LIMIT ** 2
 
 
 def outranks(new, old):

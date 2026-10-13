@@ -19,6 +19,7 @@ pkgbase = eva-desk-git
 	optdepends = playerctl: now playing in the bar
 	optdepends = wireplumber: volume in the bar
 	optdepends = hyprlock: the lock screen
+	optdepends = hypridle: standby after some idle minutes
 	optdepends = python-pillow: render the lock and login backgrounds
 	optdepends = python-numpy: the GTK theme builder (eva-desk-setup --gtk) and the asset tools
 	optdepends = python-scipy: the figure cutout tool (tools/gen)

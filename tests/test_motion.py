@@ -78,6 +78,8 @@ def nodes(node, scale=1.0):
         kids = [node.get_child(i) for i in range(node.get_n_children())]
     elif kind == T.MASK_NODE:
         kids = [node.get_source(), node.get_mask()]
+    elif kind == T.BLEND_NODE:
+        kids = [node.get_bottom_child(), node.get_top_child()]
     else:
         kids = [node.get_child()] if hasattr(node, "get_child") else []
     for kid in kids:
@@ -441,6 +443,82 @@ class KitTest(unittest.TestCase):
         self.assertGreater(logical.width, 30)
         self.assertTrue(motion.available())
 
+    def halves(self):
+        """A 4x2 picture: its left half bone, its right half gold."""
+        from eva_desk import draw as d, gtkutil
+
+        def paint(cr):
+            d.rgba(cr, d.BONE)
+            cr.rectangle(0, 0, 2, 2)
+            cr.fill()
+            d.rgba(cr, d.GOLD)
+            cr.rectangle(2, 0, 2, 2)
+            cr.fill()
+        return gtkutil.render_texture(4, 2, paint)
+
+    def test_where_a_picture_lies_when_it_fills_a_box(self):
+        from eva_desk.motion.kit import cover_box
+        self.assertEqual(cover_box(4, 2, 100, 100, 200, 200), (0.0, 100.0, 400.0, 200.0))           # as high as the box, the sides overhang evenly
+        self.assertEqual(cover_box(4, 2, 100, 100, 200, 200, fx=0.0), (100.0, 100.0, 400.0, 200.0))
+        self.assertEqual(cover_box(4, 2, 100, 100, 200, 200, fx=1.0), (-100.0, 100.0, 400.0, 200.0))
+        self.assertEqual(cover_box(4, 2, 0, 0, 400, 100, zoom=2.0, fy=1.0), (-200.0, -300.0, 800.0, 400.0))
+        ix, iy, iw, ih = cover_box(1792, 768, 0, 0, 1720, 720)
+        self.assertAlmostEqual(iw, 1720.0)
+        self.assertAlmostEqual(ih, 768 * 1720 / 1792)
+
+    def test_cover_fills_the_box_and_nothing_else(self):
+        tex = self.halves()
+        f = self.frame(lambda k: k.cover(tex, 100, 100, 200, 200, fx=0.0))
+        self.assertTrue(near(px(f, 150, 150), BONE) and near(px(f, 240, 290), BONE))               # the left half of the picture (sampled clear of
+        self.assertEqual((alpha(f, 95, 150), alpha(f, 305, 150), alpha(f, 150, 95), alpha(f, 150, 305)), (0, 0, 0, 0))     # its middle, where 4 px
+        f = self.frame(lambda k: k.cover(tex, 100, 100, 200, 200, fx=1.0))                                                 # scaled to 400 run together)
+        self.assertTrue(near(px(f, 150, 150), GOLD))
+        f = self.frame(lambda k: k.cover(tex, 100, 100, 200, 200, fx=0.0, alpha=0.5))
+        self.assertAlmostEqual(alpha(f, 150, 150), 128, delta=2)
+        self.assertEqual(pink(f), 0)
+        got = []
+        self.frame(lambda k: got.append(k.cover(tex, 100, 100, 200, 200, fx=1.0)))
+        self.assertEqual(got, [(-100.0, 100.0, 400.0, 200.0)])                 # it says where the picture went
+
+    def test_a_screen_blend_leaves_the_ground_where_the_picture_is_black(self):
+        from eva_desk import draw as d
+
+        def paint(k):
+            with k.screen_blend(lambda: k.rect(0, 0, 400, 300, d.INK)):
+                k.rect(0, 0, 400, 300, (0, 0, 0, 1))                       # a picture that is black,
+                k.rect(100, 100, 100, 100, d.BONE)                         # but for one bone square
+        f = self.frame(paint)
+        self.assertTrue(near(px(f, 50, 50), INK, tol=1))
+        self.assertTrue(near(px(f, 150, 150), BONE, tol=8))
+        self.assertEqual((alpha(f, 410, 50), pink(f)), (0, 0))
+
+    def test_a_soft_band(self):
+        from eva_desk import draw as d
+
+        def paint(k):
+            with k.soft_band(400, 100, 0, 720):
+                k.rect(0, 0, 1720, 720, d.BONE)
+        f = self.frame(paint)
+        self.assertGreaterEqual(alpha(f, 400, 300), 250)
+        self.assertAlmostEqual(alpha(f, 350, 300), 128, delta=14)
+        self.assertAlmostEqual(alpha(f, 450, 300), 128, delta=14)
+        self.assertEqual((alpha(f, 295, 300), alpha(f, 505, 300), pink(f)), (0, 0, 0))
+
+    def test_a_ring_is_six_lines_of_any_size_and_no_picture(self):
+        from eva_desk import draw as d
+        from eva_desk.motion import Piece, render
+
+        class P(Piece):
+            length = 1.0
+
+            def paint(self, kit, t, ctx):
+                kit.ring(300, 300, 100, d.GOLD, 4)
+        f = render.frame(P(), 0.0, 1720, 720, {})
+        self.assertGreater(alpha(f, 386, 300), 200)            # the right edge stands upright at cx + r cos 30
+        self.assertGreater(alpha(f, 343, 375), 200)            # the middle of the edge that runs down to the bottom corner
+        self.assertEqual((alpha(f, 300, 300), alpha(f, 420, 300)), (0, 0))
+        self.assertEqual(texture_widths(render.build(P(), 0.0, 1720, 720, {})), [])
+
 
 class CardTest(unittest.TestCase):
     def setUp(self):
@@ -723,7 +801,15 @@ class RenderTest(unittest.TestCase):
         from eva_desk import motion, preview
         with tempfile.TemporaryDirectory() as tmp:
             out = preview.motion_stills(tmp, 640, 360)
-            self.assertEqual(sorted(p.name for p in out), sorted(f"motion_{n}.png" for n in motion.pieces()))
+            self.assertEqual(sorted(p.name for p in out), sorted(f"motion_{n}.png" for n in motion.everything()))
+
+    def test_a_loop_is_rendered_for_one_lap(self):
+        from eva_desk.motion import render
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("shutil.which", return_value=None), \
+                contextlib.redirect_stdout(io.StringIO()):
+            out = render.render_motion(tmp, only="standby", size=(320, 180), fps=10)
+            self.assertEqual([p.name for p in out], ["standby.png"])
+        self.assertEqual(sorted(render.fixture_ctx()["readings"]), ["MAGI·1 CPU 07%", "MAGI·2 RAM 9.8G", "MAGI·3 LAN ↓340K"])
 
     def test_command_line(self):
         env = dict(os.environ, WAYLAND_DISPLAY="eva-none", PYTHONPATH=str(ROOT))
@@ -1149,6 +1235,8 @@ class FakeSurface:
 
 
 class FakeWin:
+    destroyed = False
+
     def __init__(self):
         self.visible, self.surface = False, FakeSurface()
 
@@ -1165,7 +1253,7 @@ class FakeWin:
         return self.surface
 
     def destroy(self):
-        self.visible = False
+        self.visible, self.destroyed = False, True
 
 
 class FakeView:
@@ -1194,6 +1282,7 @@ class FakeMonitor:
 
 
 MON = FakeMonitor()
+MON2 = FakeMonitor(1080, 1920)
 
 
 def dummy(covers=True, boom=None):
@@ -1484,11 +1573,15 @@ class PlayersTest(NoCompositor):
 
 class FakeHypr:
     lua = True
+    fail = None                                 # an exception that every request raises
 
     def __init__(self):
-        self.state, self.execs = {}, []
+        self.state, self.execs, self.asked = {}, [], []
 
     def j(self, what):
+        self.asked.append(what)
+        if self.fail is not None:
+            raise self.fail
         return self.state.get(what)
 
     def exec(self, cmd):
@@ -1613,7 +1706,7 @@ class LaunchWiring(unittest.TestCase):
         self.assertEqual(app.command("play card"), "motion is not available")
 
     def test_hyprland_plays_no_animation_of_its_own_over_it(self):
-        self.assertIn("|pulse|motion|panel-", (ROOT / "hypr" / "eva.lua").read_text())
+        self.assertIn("|pulse|motion|", (ROOT / "hypr" / "eva.lua").read_text())
 
     def test_a_new_window_gets_no_pulse_under_a_sequence_that_covers(self):
         # the window a launch opens lands under the card; its pulse would be drawn on top of it
@@ -2001,3 +2094,2082 @@ class LockWithRealPlayers(NoCompositor):
         cover.advance(0.0)
         cover.advance(1.2)
         self.assertFalse(app.motion.busy or cover.win.visible)
+
+
+# ---------------------------------------------------------------- standby
+def _installed(*names):
+    import importlib.util
+    return all(importlib.util.find_spec(n) is not None for n in names)
+
+
+@unittest.skipUnless(_installed("numpy", "scipy", "PIL"), "tools/gen/prep_art.py needs numpy, scipy and Pillow")
+class ArtTest(unittest.TestCase):
+    def prep(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("prep_art", ROOT / "tools" / "gen" / "prep_art.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def picture(self, eyes, lights=()):
+        """A dark grey 320x200 frame with a pale figure, green eyes at `eyes` and duller green lights at `lights`."""
+        import numpy as np
+        im = np.full((200, 320, 3), 0.05)
+        im[30:190, 120:220] = (0.16, 0.12, 0.2)                # the figure
+        for (x, y) in eyes:
+            im[y - 2:y + 3, x - 5:x + 6] = (0.2, 1.0, 0.3)
+        for (x, y) in lights:
+            im[y - 6:y + 7, x - 6:x + 7] = (0.3, 0.75, 0.35)
+        return im
+
+    def test_the_layers_add_back_to_the_picture_and_the_eye_is_found(self):
+        import numpy as np
+        prep = self.prep()
+        im = prep.black_floor(self.picture([(170, 60)]))
+        self.assertLess(im[5, 5].max(), 0.001)                 # the ground is true black now
+        body, eye, eyes = prep.split(im, "profile")
+        self.assertLess(np.abs(body + eye - im).max(), 1e-9)
+        self.assertEqual(len(eyes), 1)
+        self.assertAlmostEqual(eyes[0][0], 170 / 320, delta=0.01)
+        self.assertAlmostEqual(eyes[0][1], 60 / 200, delta=0.01)
+        self.assertEqual(eye[150, 40].max(), 0)                # the eye layer is the eye and nothing else
+        self.assertLess(body[60, 170, 1], 0.1)                 # and the body has lost its glow
+
+    def test_a_front_view_has_two_eyes_and_a_whole_figure_looks_in_the_head(self):
+        prep = self.prep()
+        _, _, eyes = prep.split(prep.black_floor(self.picture([(152, 60), (188, 60)])), "front")
+        self.assertEqual([round(x * 320) for x, _ in eyes], [152, 188])
+        _, _, eyes = prep.split(prep.black_floor(self.picture([(152, 60), (188, 60)])), "profile")
+        self.assertEqual(len(eyes), 1)                         # a side view has the one
+        _, _, eyes = prep.split(prep.black_floor(self.picture([(170, 50)], lights=[(170, 120)])), "full")
+        self.assertEqual(len(eyes), 1)
+        self.assertAlmostEqual(eyes[0][1], 50 / 200, delta=0.02)          # the chest light is larger and lower; it is not the eye
+
+    def test_a_picture_with_no_eye(self):
+        import numpy as np
+        prep = self.prep()
+        im = prep.black_floor(self.picture([]))
+        body, eye, eyes = prep.split(im, "front")
+        self.assertEqual((eyes, float(eye.max())), ([], 0.0))
+        self.assertLess(np.abs(body - im).max(), 1e-9)
+
+
+class ArtFiles(unittest.TestCase):
+    def test_the_pictures_the_desk_ships(self):
+        import json
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gdk
+        art = json.loads((ROOT / "assets/motion/art.json").read_text())
+        self.assertEqual(sorted(art), ["front", "full", "profile"])
+        self.assertEqual([len(art[n]["eyes"]) for n in ("profile", "front", "full")], [1, 2, 1])
+        for name, a in art.items():
+            for layer in ("body", "eye"):
+                tex = Gdk.Texture.new_from_filename(str(ROOT / f"assets/motion/{name}_{layer}.jpg"))
+                self.assertEqual((tex.get_width(), tex.get_height()), (a["w"], a["h"]), name)
+            self.assertTrue(all(0 < x < 1 and 0 < y < 1 for x, y in a["eyes"]), name)
+        self.assertLess(sum(p.stat().st_size for p in (ROOT / "assets/motion").iterdir()), 1_500_000)
+
+
+class StandbyTest(unittest.TestCase):
+    def setUp(self):
+        import json
+        from eva_desk.motion import render
+        from eva_desk.motion.amb import standby
+        self.S, self.render, self.FIX = standby, render, render.fixture_ctx()
+        self.ART = json.loads((ROOT / "assets/motion/art.json").read_text())
+
+    def loop(self):
+        """A loop that finds no pictures: the field alone."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        loop = self.S.StandbyLoop(folder=tmp.name)
+        with contextlib.redirect_stdout(io.StringIO()):
+            loop.shots()                                       # it says once what it could not find
+        return loop
+
+    def real(self):
+        return self.S.StandbyLoop()
+
+    def test_the_pure_parts(self):
+        S = self.S
+        four = list(S.ORDER)
+        self.assertEqual([S.shot_at(t, four)[0] for t in (0, 14.99, 15, 44.99, 45, 60, 75)],
+                         ["profile", "profile", "field", "tilt", "stare", "profile", "field"])
+        self.assertEqual(S.shot_at(52.5, four), ("stare", 0.5, 3))
+        self.assertEqual(S.shot_at(52.5, ["field"]), ("field", 0.5, 0))
+        self.assertAlmostEqual(S.breathe(0), 0.70)
+        self.assertAlmostEqual(max(S.breathe(i / 50) for i in range(300)), 1.0, places=3)
+        self.assertAlmostEqual(min(S.breathe(i / 50) for i in range(300)), 0.40, places=3)
+        for t, where in ((0, -0.3), (4.5, 0.5), (9, -0.3), (8.99, 1.2982)):
+            self.assertAlmostEqual(S.passing(t), where, places=3)
+        self.assertEqual((S.tilt(0.0), S.tilt(0.04), S.tilt(0.74), S.tilt(1.0)), (1.0, 1.0, 0.0, 0.0))
+        self.assertEqual(S.fold(0.0), (1.0, 1.0, False))
+        self.assertAlmostEqual(S.fold(0.02)[1], 1 - 0.98 / 3)
+        self.assertAlmostEqual(S.fold(0.06)[1], 1 - 0.98 * 2 / 3)
+        self.assertEqual(S.fold(0.10)[0], 1.0)
+        self.assertAlmostEqual(S.fold(0.10)[1], 0.02)
+        self.assertTrue(S.fold(0.10)[2])
+        self.assertAlmostEqual(S.fold(0.165)[0], 0.875)
+        self.assertEqual(S.fold(0.19)[0], 0.0)
+
+    def test_the_registry_keeps_loops_apart(self):
+        from eva_desk import motion
+        self.assertEqual(list(motion.loops())[0], "standby")
+        self.assertFalse(set(motion.loops()) & set(motion.pieces()))           # eva-ctl play must never be handed a piece with no end
+        self.assertTrue(all(cls().length is None for cls in motion.loops().values()))
+        self.assertEqual(list(motion.everything()), list(motion.pieces()) + list(motion.loops()))
+        self.assertEqual((motion.loops()["standby"]().length, self.loop().shots()), (None, ["field"]))
+
+    def test_the_field(self):
+        render, FIX = self.render, self.FIX
+        f = render.frame(self.loop(), 3.0, 1720, 720, FIX)
+        self.assertEqual(set(grid(f)), {255})                  # the whole frame is covered
+        self.assertTrue(near(px(f, 860, 20), INK) and near(px(f, 860, 700), INK))        # the bars
+        self.assertEqual(pink(f), 0)
+        node = render.build(self.loop(), 3.0, 1720, 720, FIX)
+        self.assertTrue({180.0, 150.0} <= glyph_sizes(node), glyph_sizes(node))          # the clock (240 px) and 待機 (200 px), in points
+        self.assertFalse(same(f, render.frame(self.loop(), 4.0, 1720, 720, FIX)))        # it moves
+
+    def test_on_a_narrower_frame_the_field_keeps_its_type_apart(self):
+        def lit(f, s, x0, x1, y0, y1):                         # bright pixels in a box given in design px
+            return sum(max(px(f, x * s, y * s)[:3]) > 150 for x in range(x0, x1, 6) for y in range(y0, y1, 6))
+        f = self.render.frame(self.loop(), 3.0, 1920, 1080, self.FIX)            # 16:9: a frame 1280 wide
+        self.assertEqual(lit(f, 1.5, 520, 600, 250, 440), 0)                     # between 待機 and the clock
+        self.assertGreater(lit(f, 1.5, 700, 1170, 250, 440), 50)                 # the clock is there, smaller
+        s = 1080 / 1280
+        f = self.render.frame(self.loop(), 3.0, 1080, 1920, self.FIX)            # upright: the clock goes under 待機
+        mid = round(1920 / s / 2)
+        self.assertGreater(lit(f, s, 104, 500, mid - 300, mid - 130), 50)        # 待機
+        self.assertEqual(lit(f, s, 520, 1270, mid - 300, mid - 100), 0)          # nothing beside it
+        self.assertGreater(lit(f, s, 104, 760, mid, mid + 200), 50)              # the clock, below
+
+    def test_the_clock_shows_what_it_is_given(self):
+        render, FIX = self.render, self.FIX
+        a = render.frame(self.loop(), 3.0, 1720, 720, {**FIX, "second": 10})
+        b = render.frame(self.loop(), 3.0, 1720, 720, {**FIX, "second": 50})
+        c = render.frame(self.loop(), 3.0, 1720, 720, {**FIX, "clock": "09:05"})
+        self.assertFalse(same(a, b) or same(a, c))
+
+    def test_nothing_is_made_after_the_first_frame(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        from eva_desk.motion.kit import Kit
+        for loop, times in ((self.loop(), (2.0, 2.5, 9.0, 13.9)),             # the ring grows through all of these
+                            (self.real(), (1.0, 8.0, 14.0)), (self.real(), (31.0, 38.0, 44.0)), (self.real(), (46.0, 52.0, 59.0))):
+            store, sizes = {}, []
+            for t in times:
+                kit = Kit(Gtk.Snapshot(), 1720, 720, 1.0, store)
+                loop.paint(kit, t, self.FIX)
+                kit.close()
+                sizes.append(len(store))
+            self.assertEqual(len(set(sizes)), 1, (times, sizes))
+
+    def test_the_type_keeps_its_size(self):
+        loop, sizes = self.real(), set()
+        for i in range(120):                                   # a whole lap: the cameras move, the type does not grow with them
+            sizes |= glyph_sizes(self.render.build(loop, 60 * (i + 0.5) / 120, 1720, 720, self.FIX))
+        self.assertLessEqual(len(sizes), 16, sorted(sizes))
+
+    def test_it_folds_away(self):
+        render, FIX, loop = self.render, self.FIX, self.loop()
+        f = render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 0.02})
+        self.assertEqual((alpha(f, 860, 100), alpha(f, 860, 360), alpha(f, 860, 620)), (0, 255, 0))      # two thirds of the height are left
+        f = render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 0.10})
+        self.assertTrue(near(px(f, 860, 360), BONE) and near(px(f, 20, 360), BONE))                      # the line, the whole width
+        self.assertEqual((alpha(f, 860, 340), alpha(f, 860, 380)), (0, 0))
+        f = render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 0.165})
+        self.assertEqual((alpha(f, 60, 360), alpha(f, 860, 360)), (0, 255))                              # the line closes from both ends
+        self.assertIsNone(box(render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 0.19})))
+        self.assertIsNone(box(render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 5.0})))
+        f = render.frame(loop, 3.0, 1720, 720, {**FIX, "leaving": 0.0})                                  # the first frame of the exit is still whole
+        self.assertEqual(set(grid(f)), {255})
+
+    def test_it_paints_with_nothing_and_with_odd_inputs(self):
+        for ctx in ({}, {"second": 59.99}, {"second": 75}, {"second": -1}, {"second": "soon"}, {"clock": "9:05", "readings": []},
+                    {"readings": ["X" * 400]}, {"date": "مرحبا"}, {"clock": None, "date": None, "readings": None}):
+            for w, h in ((1720, 720), (1920, 1080), (1080, 1920)):
+                f = self.render.frame(self.loop(), 3.0, w, h, ctx)
+                self.assertEqual((set(grid(f)), pink(f)), ({255}, 0), (ctx, w, h))
+
+    def test_a_week_in(self):
+        t = 7 * 86400 + 3.0
+        f = self.render.frame(self.loop(), t, 1720, 720, self.FIX)
+        self.assertEqual((set(grid(f)), pink(f)), ({255}, 0))
+        self.assertTrue(same(f, self.render.frame(self.loop(), t, 1720, 720, self.FIX)))
+
+    # ------------------------------------------------------------ the three pictures
+    def test_the_four_shots(self):
+        render, FIX, loop = self.render, self.FIX, self.real()
+        self.assertEqual(loop.shots(), ["profile", "field", "tilt", "stare"])
+        sizes = {1.0: 150, 16.0: 240, 31.0: 220, 46.0: 104}                        # the clock moves place and size every shot
+        for t, clock in sizes.items():
+            node = render.build(loop, t, 1720, 720, FIX)
+            self.assertIn(clock * 0.75, glyph_sizes(node), t)                      # px to points
+            widths = set(texture_widths(node))
+            self.assertEqual(1792 in widths, t in (1.0, 46.0), t)
+            self.assertEqual(896 in widths, t == 31.0, t)
+            f = render.frame(loop, t, 1720, 720, FIX)
+            self.assertEqual((set(grid(f)), pink(f)), ({255}, 0), t)
+            self.assertTrue(near(px(f, 860, 20), INK) and near(px(f, 860, 700), INK), t)       # the bars lie over the picture
+
+    def test_the_picture_is_nearly_all_black(self):
+        f = self.render.frame(self.real(), 1.0, 1720, 720, {})
+        data, lit, n = bytes(f.get_data()), 0, 0
+        for i in range(0, len(data), 4 * 97):
+            lit += max(data[i:i + 3]) > 60
+            n += 1
+        self.assertLess(lit / n, 0.25)
+        self.assertGreater(lit, 20)                                                # but the Eva is there
+
+    def test_the_eyes_breathe(self):
+        from eva_desk.motion.kit import cover_box
+        loop, a = self.real(), self.ART["profile"]
+        ex, ey = a["eyes"][0]
+
+        def eye(t):                                            # the green at the eye; the camera pushes in on it, so it stays put
+            ix, iy, iw, ih = cover_box(a["w"], a["h"], 0, 0, 1720, 720, 1 + 0.07 * t / 15, ex, ey)
+            return px(self.render.frame(loop, t, 1720, 720, self.FIX), ix + ex * iw, iy + ey * ih)[1]
+        self.assertGreater(eye(1.5), eye(4.5) + 30)            # breathe is 1.0 at 1.5 s and 0.4 at 4.5 s
+
+    def test_the_light_passes(self):
+        loop = self.real()
+
+        def blue(t, x0, x1):                                   # how much bluer than the ink the head is: the armour and its rim
+            data, stride = bytes(self.render.frame(loop, t, 1720, 720, self.FIX).get_data()), 1720 * 4
+            return sum(max(0, data[y * stride + x * 4] - INK[0]) for y in range(60, 660, 7) for x in range(x0, x1, 7))
+        ex = self.ART["profile"]["eyes"][0][0]
+        x0, x1 = int(1720 * ex) - 200, int(1720 * ex) + 200    # the head
+        lit = 9 * (ex + 0.3) / 1.6                             # when the band's middle is on the eye
+        dark = lit + 6                                         # one breath later, so the eye glows the same, and the light is off the head
+        self.assertGreater(blue(lit, x0, x1), 1.3 * blue(dark, x0, x1))
+
+    def test_a_picture_that_is_missing_or_broken_drops_its_shot(self):
+        src = ROOT / "assets/motion"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            for p in src.iterdir():
+                shutil.copy(p, tmp / p.name)
+            (tmp / "full_eye.jpg").unlink()
+            (tmp / "front_body.jpg").write_bytes(b"not a picture")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                loop = self.S.StandbyLoop(folder=tmp)
+                self.assertEqual(loop.shots(), ["profile", "field"])
+                self.assertEqual(loop.shots(), ["profile", "field"])
+                loop.release()
+                self.assertEqual(loop.shots(), ["profile", "field"])                 # loaded again, and not said again
+                f = self.render.frame(loop, 31.0, 1720, 720, self.FIX)               # what would have been the tilt
+            self.assertEqual(out.getvalue().count("eva-desk: standby:"), 2, out.getvalue())      # each said once
+            self.assertEqual((set(grid(f)), pink(f)), ({255}, 0))
+            self.assertEqual(self.S.shot_at(31.0, loop.shots())[0], "profile")       # two shots: a lap is thirty seconds
+            (tmp / "art.json").write_text("{")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(self.S.StandbyLoop(folder=tmp).shots(), ["field"])
+            self.assertEqual(len(out.getvalue().splitlines()), 1)
+            (tmp / "art.json").write_text('{"profile": {"w": 1792, "h": 768}, "front": 3, "full": {"eyes": "no"}}')
+            (tmp / "front_body.jpg").write_bytes((src / "front_body.jpg").read_bytes())
+            with contextlib.redirect_stdout(io.StringIO()):
+                loop = self.S.StandbyLoop(folder=tmp)
+                self.assertEqual(loop.shots(), ["profile", "field"])                 # an entry with no eyes is fine; nonsense is not
+                self.assertEqual(pink(self.render.frame(loop, 1.0, 1720, 720, {})), 0)
+
+    def test_every_shot_at_every_size(self):
+        loop = self.real()
+        for w, h in ((3440, 1440), (1920, 1080), (1080, 1920)):
+            for t in (1.0, 16.0, 31.0, 46.0):
+                f = self.render.frame(loop, t, w, h, self.FIX)
+                self.assertEqual((set(grid(f)), pink(f)), ({255}, 0), (w, h, t))
+                self.assertTrue(same(f, self.render.frame(loop, t, w, h, self.FIX)), (w, h, t))
+
+    def test_on_a_tall_frame_the_clock_stands_clear_of_the_picture(self):
+        s = 1080 / 1280                                        # px to the design px on a 1080x1920 frame
+        H = 1920 / s
+        band = 0.38 * (H - 0.5625 * 1280)
+        node = self.render.build(self.real(), 1.0, 1080, 1920, self.FIX)
+        self.assertIn(round(150 * 0.75 * s, 2), glyph_sizes(node))                 # the profile's clock, in points
+        f = self.render.frame(self.real(), 1.0, 1080, 1920, {})
+        self.assertTrue(near(px(f, 540, (band - 60) * s), INK))                    # over the band there is only ink
+
+    def test_release_drops_the_pictures_and_it_paints_again(self):
+        loop = self.real()
+        self.render.frame(loop, 1.0, 1720, 720, self.FIX)
+        loop.release()
+        self.assertIsNone(loop.art)
+        self.assertEqual(loop.shots(), ["profile", "field", "tilt", "stare"])
+        self.assertEqual(pink(self.render.frame(loop, 1.0, 1720, 720, self.FIX)), 0)
+
+
+class StandbyTriggers(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import triggers
+        self.T = triggers
+
+    def test_what_blocks_standby(self):
+        T = self.T
+        mons = [{"id": 0, "name": "DP-1", "activeWorkspace": {"id": 1}}, {"id": 1, "name": "DP-2", "activeWorkspace": {"id": 5}}]
+        game = {"class": "steam_app_1145360", "workspace": {"id": 9}, "monitor": 0, "fullscreen": 0}      # on a workspace nobody is looking at
+        full = {"class": "mpv", "workspace": {"id": 5}, "monitor": 1, "fullscreen": 2}                    # on the other monitor
+        term = {"class": "kitty", "workspace": {"id": 1}, "monitor": 0, "fullscreen": 0}
+        pats = ["^steam_app_", "^gamescope$"]
+        self.assertEqual(T.standby_blocked(mons, [term], pats, False), "")
+        self.assertEqual(T.standby_blocked(mons, [term, game], pats, False), "game")
+        self.assertEqual(T.standby_blocked(mons, [term, full], pats, False), "fullscreen")
+        self.assertEqual(T.standby_blocked(mons, [term, game, full], pats, True), "locked")
+        self.assertEqual(T.standby_blocked(mons, [term], pats, None), "")
+        self.assertEqual(T.standby_blocked(None, None, pats, None), "")
+
+    def test_travel(self):
+        tr = self.T.Travel()
+        self.assertFalse(tr.moved(500, 500, 0.0))              # the layer came up under a resting pointer
+        self.assertFalse(tr.moved(504, 503, 0.1))              # 5 px
+        self.assertFalse(tr.moved(506, 505, 0.2))              # 7.8 px
+        self.assertTrue(tr.moved(507, 506, 0.3))               # 9.2 px
+        tr = self.T.Travel()                                   # a mouse on a desk that shakes: a pixel every few seconds
+        self.assertFalse(any(tr.moved(500 + i, 500, 3.0 * i) for i in range(40)))
+        tr = self.T.Travel()                                   # a slow hand is still a hand
+        self.assertTrue(any(tr.moved(500 + i, 500, 0.2 * i) for i in range(12)))
+
+    def test_readings(self):
+        T = self.T
+        res = {"cpu": 7, "mem": "9.8G", "mem_pct": 31, "net": "lan", "down": "340K", "show": []}
+        self.assertEqual(T.readings(res), ["MAGI·1 CPU 07%", "MAGI·2 RAM 9.8G", "MAGI·3 LAN ↓340K"])
+        self.assertEqual(T.readings({**res, "cpu": 100, "net": "wifi"})[::2], ["MAGI·1 CPU 100%", "MAGI·3 WIFI ↓340K"])
+        self.assertEqual(T.readings({**res, "cpu": 41.6, "net": ""})[::2], ["MAGI·1 CPU 42%", "MAGI·3 NET ↓340K"])
+        self.assertEqual((T.readings(None), T.readings({})), ([], []))
+
+
+def ambient(fps=30, keyboard="exclusive"):
+    """An AmbientLayer with no window behind it; its timers and its keyboard mode are lists to read."""
+    from eva_desk.motion.player import AmbientLayer
+    a = AmbientLayer.__new__(AmbientLayer)
+    a.app, a.win, a.view = object(), FakeWin(), FakeView()
+    a.fps, a.mode = fps, keyboard
+    a.setup()
+    a.timers, a.cancelled, a.afters, a.keyboard = [], [], [], []
+    a._every = lambda ms, fn: a.timers.append((ms, fn)) or len(a.timers)
+    a._cancel = a.cancelled.append
+    a._after = lambda ms, fn: a.afters.append((ms, fn))
+    a._keyboard = a.keyboard.append
+    return a
+
+
+def screens():
+    """(a Standby whose layers are ambient() and whose clock is its `now`, a piece to show)."""
+    from eva_desk.motion.player import Standby
+    s = Standby(object(), make=lambda app: ambient(), clock=lambda: s.now)
+    s.now = 0.0
+    return s, dummy()
+
+
+class AmbientTest(NoCompositor):
+    def test_it_repaints_from_a_timer_at_the_time_it_is_told(self):
+        a, piece, asked = ambient(fps=30), dummy(), []
+        self.assertTrue(a.play(piece, MON, lambda: asked.append(1) or {"clock": "22:44"}, 100.0))
+        self.assertTrue(a.win.visible and a.up)
+        self.assertEqual(([ms for ms, _ in a.timers], a.keyboard), ([33], ["exclusive"]))
+        self.assertFalse(a.win.surface.region.is_empty())      # it takes the pointer
+        self.assertEqual((a.at, a.ctx, len(asked)), (0.0, {"clock": "22:44"}, 1))        # the first frame has its inputs
+        a.beat(107.5)
+        self.assertEqual((a.at, a.ctx, len(asked)), (7.5, {"clock": "22:44"}, 2))
+        a.hide()
+        self.assertEqual((a.win.visible, a.up, a.cancelled, piece.released), (False, False, [1], 0))     # the piece is not the layer's to release
+        a.beat(108.0)                                          # a beat that was already on its way
+        self.assertEqual(len(asked), 2)
+
+    def test_no_monitor_and_a_piece_that_cannot_prepare(self):
+        a = ambient()
+        self.assertFalse(a.play(dummy(), None, dict, 0.0))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(a.play(dummy(boom="prepare"), MON, dict, 0.0))
+        self.assertEqual((a.win.visible, a.up, a.timers), (False, False, []))
+
+    def test_leaving(self):
+        a, seen, hidden = ambient(), [], []
+        a.play(dummy(), MON, dict, 0.0)
+        a.on_poke = lambda layer, kind, x, y: seen.append(kind)
+        a.on_hidden = hidden.append
+        a.poke("key")
+        a.leave(50.0, 0.19)
+        self.assertTrue(a.leaving and a.up)
+        self.assertTrue(a.win.surface.region.is_empty())       # the pointer goes through from now on
+        self.assertEqual(a.keyboard[-1], "none")
+        self.assertEqual(a.timers[-1][0], 8)
+        a.poke("key")                                          # what comes now is not for it
+        self.assertEqual(seen, ["key"])
+        a.beat(50.1)
+        self.assertAlmostEqual(a.ctx["leaving"], 0.1)
+        self.assertTrue(a.win.visible)
+        a.leave(50.15, 0.19)                                   # a second leave does not start the fold again
+        a.beat(50.2)
+        self.assertFalse(a.win.visible or a.up or a.leaving)
+        self.assertEqual(hidden, [a])
+
+    def test_a_leave_ends_even_if_the_timer_never_runs(self):
+        a = ambient()
+        a.play(dummy(), MON, dict, 0.0)
+        a.leave(50.0, 0.19)
+        ms, fn = a.afters[-1]
+        self.assertEqual(ms, 340)
+        fn()
+        self.assertFalse(a.win.visible)
+        a.play(dummy(), MON, dict, 0.0)                        # and a late one from an old run does not hide the next
+        fn()
+        self.assertTrue(a.win.visible)
+        self.assertEqual(a.keyboard[-1], "exclusive")
+        self.assertFalse(a.win.surface.region.is_empty())
+
+    def test_a_piece_that_raises_is_taken_down(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        a, broke = ambient(), []
+        a.on_broken = broke.append
+        a.play(dummy(boom="paint"), MON, dict, 0.0)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            a._paint(Gtk.Snapshot(), 1720, 720)
+            a._paint(Gtk.Snapshot(), 1720, 720)                # nothing more is painted
+        self.assertEqual(out.getvalue().count("boom"), 1)
+        self.assertTrue(a.win.visible)                         # GTK is in the middle of drawing that window
+        for ms, fn in a.afters:
+            fn()
+        self.assertEqual((a.win.visible, broke), (False, [a]))
+
+    def test_inputs_that_raise_take_it_down_too(self):
+        a, broke = ambient(), []
+        a.on_broken = broke.append
+        a.play(dummy(), MON, dict, 0.0)
+        a.inputs = lambda: 1 / 0
+        with contextlib.redirect_stdout(io.StringIO()):
+            a.beat(1.0)
+        self.assertEqual((a.win.visible, a.up, broke), (False, False, [a]))
+
+    def test_it_paints_the_piece_at_its_time(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        a, piece = ambient(), dummy()
+        piece.length = None                                    # a loop
+        a.play(piece, MON, lambda: {"clock": "22:44"}, 0.0)
+        a.beat(3.0)
+        piece.kits.clear()
+        seen = []
+        piece.paint = lambda kit, t, ctx: seen.append((t, ctx, kit.W, kit.H))
+        a._paint(Gtk.Snapshot(), 1720, 720)
+        self.assertEqual(seen, [(3.0, {"clock": "22:44"}, 1720.0, 720.0)])
+
+
+class StandbyScreens(NoCompositor):
+    def test_one_clock_on_every_monitor(self):
+        s, piece = screens()
+        s.now = 100.0
+        self.assertTrue(s.start(piece, [MON, MON2], dict))
+        self.assertEqual((s.up, s.monitors()), (True, [MON, MON2]))
+        self.assertEqual({layer.epoch for layer in s.layers()}, {100.0})
+        self.assertEqual({layer.keyboard[-1] for layer in s.layers()}, {"exclusive"})
+        s.now = 130.0
+        self.assertTrue(s.start(piece, [MON, MON2], dict))     # already up: the clock is not restarted
+        self.assertEqual({layer.epoch for layer in s.layers()}, {100.0})
+
+    def test_what_ends_it(self):
+        s, piece = screens()
+        ended = []
+        s.on_end = lambda: ended.append(1)
+        s.start(piece, [MON, MON2], dict)
+        one, two = s.layers()
+        s.now = 10.0
+        s.poke(one, "motion", 500, 500)                        # the pointer was resting there
+        s.poke(two, "motion", 40, 40)
+        s.now = 10.2
+        s.poke(one, "motion", 503, 503)
+        self.assertTrue(s.up and not one.leaving)
+        s.poke(one, "motion", 520, 500)                        # that is a hand
+        self.assertTrue(one.leaving and two.leaving)           # everywhere at once
+        self.assertEqual((ended, piece.released), ([], 0))     # it is still folding
+        for layer in (one, two):
+            layer.beat(10.2 + 0.2)
+        self.assertEqual((s.up, ended, piece.released), (False, [1], 1))
+        for kind in ("key", "click"):
+            s.start(piece, [MON, MON2], dict)
+            s.poke(s.layers()[1], kind)
+            self.assertTrue(all(layer.leaving for layer in s.layers()), kind)
+            s.end(at_once=True)                                # at once, also in the middle of a fold
+            self.assertFalse(s.up)
+        self.assertEqual((len(ended), piece.released), (3, 3))
+        s.end()
+        s.end(at_once=True)                                    # ending what is not up does nothing
+        self.assertEqual(len(ended), 3)
+
+    def test_the_pointer_rests_anew_on_each_run(self):
+        s, piece = screens()
+        s.start(piece, [MON], dict)
+        one, = s.layers()
+        s.poke(one, "motion", 500, 500)
+        s.end(at_once=True)
+        s.now = 0.5
+        s.start(piece, [MON], dict)
+        s.poke(one, "motion", 900, 900)                        # where it rests now: the first report of this run
+        self.assertTrue(s.up and not one.leaving)
+
+    def test_it_starts_where_it_can(self):
+        s, piece = screens()
+        self.assertFalse(s.start(piece, [], dict))
+        self.assertEqual(piece.released, 1)
+        with contextlib.redirect_stdout(io.StringIO()):
+            bad = dummy(boom="prepare")
+            self.assertFalse(s.start(bad, [MON, MON2], dict))
+        self.assertEqual((s.up, bad.released), (False, 1))
+
+    def test_a_layer_that_cannot_paint_ends_it_everywhere(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        s, _ = screens()
+        piece, ended = dummy(boom="paint"), []
+        s.on_end = lambda: ended.append(1)
+        s.start(piece, [MON, MON2], dict)
+        one, two = s.layers()
+        with contextlib.redirect_stdout(io.StringIO()):
+            one._paint(Gtk.Snapshot(), 1720, 720)
+        for ms, fn in one.afters:
+            fn()
+        self.assertFalse(s.up or one.win.visible or two.win.visible)
+        self.assertEqual((piece.released, ended), (1, [1]))
+
+    def test_a_piece_that_cannot_release_still_ends(self):
+        s, piece = screens()
+        piece.release = lambda: 1 / 0
+        s.start(piece, [MON], dict)
+        with contextlib.redirect_stdout(io.StringIO()):
+            s.end(at_once=True)
+        self.assertFalse(s.up)
+
+    def test_forget(self):
+        s, piece = screens()
+        s.start(piece, [MON, MON2], dict)
+        gone = s.layers()[1]
+        s.forget([MON])                                        # its monitor went away while it was up
+        self.assertEqual((len(s.layers()), gone.win.visible, s.up, s.monitors()), (1, False, True, [MON]))
+        s.end(at_once=True)
+        s.forget([])
+        self.assertEqual(s.layers(), [])
+
+
+class FakeStandby:
+    def __init__(self):
+        self.starts, self.ends, self.up, self.on = [], [], False, []
+
+    def start(self, piece, monitors, inputs):
+        if not self.up:
+            self.starts.append((piece, list(monitors), inputs))
+            self.on = list(monitors)
+        self.up = True
+        return bool(self.on)
+
+    def end(self, at_once=False):
+        if self.up:
+            self.ends.append(at_once)
+        self.up = False
+
+    def monitors(self):
+        return self.on if self.up else []
+
+    def forget(self, alive):
+        pass
+
+
+class FakePanel:
+    visible = True
+
+    def __init__(self):
+        self.hidden = self.closed = 0
+
+    def hide(self):
+        self.hidden += 1
+
+    def close(self):
+        self.closed += 1
+
+
+def standby_app(**standby):
+    """lock_app(), with a standby that only notes what it is told."""
+    app = lock_app()
+    app.cfg["standby"].update(standby)
+    app.standby, app.idle, app.panels = FakeStandby(), None, {}
+    return app
+
+
+class StandbyWiring(unittest.TestCase):
+    def setUp(self):
+        self.monitors = {"DP-1": "GDK-1", "DP-2": "GDK-2"}                     # what GTK knows: every monitor, not only the main one
+        self.stale = []                                                        # never the real one: it reads this machine's state folder and signals
+        for target, fake in (("eva_desk.gtkutil.monitors", lambda: dict(self.monitors)),
+                             ("eva_desk.sources.idle.end_stale", lambda folder, **kw: self.stale.append(folder))):
+            patch = mock.patch(target, fake, create=True)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_the_defaults(self):
+        cfg = config.load("/nonexistent")
+        self.assertEqual(cfg["standby"], {"enabled": True, "minutes": 5, "idle": "hypridle"})
+        self.assertEqual(cfg["ambient"]["fps"], 30)
+        self.assertIn("|pulse|motion|standby|", (ROOT / "hypr" / "eva.lua").read_text())
+        self.assertIn("eva-ctl standby", (ROOT / "bin" / "eva-ctl").read_text())
+        example = (ROOT / "config" / "eva.example.toml").read_text()
+        self.assertTrue("[standby]" in example and "[ambient]" in example)
+
+    def test_standby_on(self):
+        app = standby_app()
+        self.assertEqual(app.command("standby"), "ok")
+        (piece, mons, inputs), = app.standby.starts
+        self.assertEqual((type(piece).__name__, sorted(mons)), ("StandbyLoop", ["GDK-1", "GDK-2"]))        # every monitor, not only the main one
+        self.assertEqual(app.motion.stopped, [None])           # a sequence that was playing has gone
+        ctx = inputs()
+        self.assertEqual(sorted(ctx), ["clock", "date", "readings", "second"])
+        self.assertTrue(0 <= ctx["second"] < 60)
+        self.assertEqual(app.command("standby on"), "ok")      # already up
+        self.assertEqual(len(app.standby.starts), 1)
+        self.assertEqual(app.command("standby off"), "ok")
+        self.assertEqual(app.standby.ends, [False])            # with the fold
+        self.assertEqual(app.command("standby off"), "ok")     # not up: nothing to do
+        self.assertEqual(app.command("standby maybe"), "standby: on | off")
+        self.assertEqual(app.command("play standby"), "standby is a loop: eva-ctl standby on")
+
+    def test_the_inputs_ask_hyprland_nothing(self):
+        app = standby_app()
+        app.res_state = {"cpu": 7, "mem": "9.8G", "mem_pct": 31, "net": "lan", "down": "340K", "show": []}
+        app.command("standby")
+        app.hypr.asked.clear()
+        ctx = app.standby.starts[0][2]()
+        self.assertEqual((app.hypr.asked, ctx["readings"][0]), ([], "MAGI·1 CPU 07%"))
+
+    def test_when_it_does_not_start(self):
+        game = {"class": "steam_app_1", "workspace": {"id": 9}, "monitor": 0, "fullscreen": 0}
+        full = {"class": "mpv", "workspace": {"id": 5}, "monitor": 1, "fullscreen": 2}
+        for state, answer in (({"clients": [game]}, "not now: a game is open"), ({"clients": [full]}, "not now: a window is fullscreen"),
+                              ({"locked": {"locked": True}}, "not now: the session is locked")):
+            app = standby_app()
+            app.hypr.state.update(state)
+            self.assertEqual((app.command("standby on"), app.standby.starts), (answer, []))
+        app = standby_app()
+        app.hypr.fail = OSError("gone")
+        self.assertEqual(app.command("standby on"), "not now: Hyprland does not answer")
+        app = standby_app()
+        self.monitors.clear()
+        self.assertEqual(app.command("standby on"), "no monitor")
+        app = standby_app(enabled=False)
+        app.standby = None
+        self.assertEqual(app.command("standby on"), "standby is off ([standby] enabled)")
+        self.assertEqual(app.command("standby off"), "ok")
+        app = standby_app()
+        app.motion = app.standby = None
+        self.assertEqual(app.command("standby on"), "motion is not available")
+
+    def test_it_closes_what_holds_the_keyboard(self):
+        app = standby_app()
+        app.launcher, app.overlays = FakePanel(), {"power": FakePanel(), "alttab": FakePanel()}
+        app.panels = {"sound": FakePanel()}
+        app.command("standby on")
+        self.assertEqual([p.hidden for p in (app.launcher, app.overlays["power"], app.overlays["alttab"])], [1, 1, 1])
+        self.assertEqual(app.panels["sound"].closed, 1)
+
+    def test_what_blocks_a_start_also_ends_it(self):
+        app = standby_app()
+        app._standby_check()                                   # not up: nothing to look at
+        self.assertEqual(app.hypr.asked, [])
+        app.command("standby on")
+        app._standby_check()
+        self.assertEqual(app.standby.ends, [])
+        app.hypr.state["clients"] = [{"class": "gamescope", "workspace": {"id": 3}, "monitor": 0, "fullscreen": 0}]
+        app._standby_check()
+        self.assertEqual(app.standby.ends, [True])             # at once
+
+    def test_a_monitor_that_goes_away_ends_it(self):
+        app = standby_app()
+        app.command("standby on")
+        self.monitors.pop("DP-2")
+        app._standby_check()
+        self.assertEqual(app.standby.ends, [True])
+        app.command("standby on")
+        self.monitors["DP-3"] = "GDK-3"                        # or one that comes: it would be left uncovered
+        app._standby_check()
+        self.assertEqual(app.standby.ends, [True, True])
+
+    def test_locking_sleeping_and_a_critical_notification(self):
+        app = standby_app()
+        app.command("standby on")
+        app.lock()
+        self.assertEqual((app.standby.ends, app.hypr.execs), ([True], ["hyprlock"]))        # standby goes first, then the lock screen comes
+        app.standby.up = True
+        app._on_sleep(True)
+        app.standby.up = True
+        app.hypr.state["locked"] = {"locked": True}
+        app.cfg["motion"]["wake"] = False                      # the watch looks for standby's sake too
+        app._watch_lock(now=0.0)
+        self.assertEqual(app.standby.ends, [True, True, True])
+        self.assertEqual(len(app.later), 1)                    # and it looks again
+        app.standby.up, band = True, []
+        app.overlays = {"alarm": types.SimpleNamespace(show=band.append)}
+        app._on_critical({"summary": "disk"})
+        self.assertEqual((app.standby.ends[-1], band), (False, [{"summary": "disk"}]))
+        app.standby.up, app.overlays = True, {}
+        app._on_critical({"summary": "disk"})                  # with no band it still ends standby
+        self.assertEqual(len(app.standby.ends), 5)
+
+    def test_the_watch_rests_when_nothing_needs_it(self):
+        app = standby_app()
+        app.standby = None
+        app.cfg["motion"]["wake"] = False
+        app._watch_lock(now=0.0)
+        self.assertEqual((app.later, app.hypr.asked), ([], []))
+
+    def test_nothing_else_plays_over_it(self):
+        app = standby_app()
+        self.assertFalse(app._quiet() or app._covered())
+        app.command("standby on")
+        self.assertTrue(app._quiet() and app._covered())
+
+    def test_the_idle_child_follows_the_settings(self):
+        made = []
+
+        def fake(minutes, ctl, folder):
+            made.append((minutes, ctl, folder))
+            return types.SimpleNamespace(start=lambda: True)
+        for standby, want in (({}, [5]), ({"minutes": 0}, []), ({"minutes": "soon"}, []), ({"idle": "none"}, []),
+                              ({"enabled": False}, []), ({"minutes": 12}, [12])):
+            app = standby_app(**standby)
+            made.clear()
+            self.stale.clear()
+            with mock.patch("eva_desk.sources.idle.Idle", fake):
+                app._start_idle()
+            self.assertEqual([m[0] for m in made], want, standby)
+            self.assertEqual(self.stale, [] if want else [config.STATE_DIR], standby)      # with no child of its own it still ends one left behind
+        self.assertTrue(made[0][1].endswith("bin/eva-ctl"))
+        self.assertEqual(made[0][2], config.STATE_DIR)
+
+    def test_a_reload_stops_the_idle_child_first(self):
+        app, order = standby_app(), []
+        app.idle = types.SimpleNamespace(stop=lambda: order.append("stop"))
+        app.argv = []
+        app.command("standby on")
+        with mock.patch("os.execv", lambda *a: order.append("exec")):
+            app._restart()
+        self.assertEqual(order, ["stop", "exec"])
+        app._stop_children()                                   # twice is fine
+        app.idle = types.SimpleNamespace(stop=lambda: 1 / 0)   # and one that will not stop does not stop the daemon from going
+        with contextlib.redirect_stderr(io.StringIO()):
+            app._stop_children()
+
+    def test_the_idle_child_going_is_said_once(self):
+        app = standby_app()
+        app.idle, app.minute = types.SimpleNamespace(gone=lambda: True), None
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            app._clock()
+        self.assertIn("hypridle has exited", out.getvalue())
+
+    def test_critical_notifications_are_heard_without_the_band(self):
+        from eva_desk import overlays as O
+        heard = []
+        watch = O.NotifyWatch.__new__(O.NotifyWatch)
+        watch.on_critical = heard.append
+
+        def message(urgency, member="Notify"):
+            body = types.SimpleNamespace(n_children=lambda: 8, unpack=lambda: ("mail", 0, "", "Disk", "full", [], {"urgency": urgency}, -1))
+            return types.SimpleNamespace(get_member=lambda: member, get_interface=lambda: "org.freedesktop.Notifications", get_body=lambda: body)
+        with mock.patch.object(O.GLib, "idle_add", lambda fn, *a: fn(*a)):
+            for m in (message(2), message(1), message(2, "CloseNotification")):
+                self.assertIs(watch._filter(None, m, True), m)                 # a monitor passes every message on
+            watch._filter(None, message(2), False)                             # one of its own, going out
+            with contextlib.redirect_stdout(io.StringIO()):
+                watch._filter(None, types.SimpleNamespace(get_member=lambda: 1 / 0), True)   # and one it cannot read: said, not raised
+        self.assertEqual(heard, [{"app": "mail", "summary": "Disk", "body": "full"}])
+        watch.on_critical = lambda note: 1 / 0                                 # whoever listens may fail; the watch goes on
+        with mock.patch.object(O.GLib, "idle_add", lambda fn, *a: fn(*a)), contextlib.redirect_stderr(io.StringIO()):
+            watch._filter(None, message(2), True)
+
+
+class StandbyHardening(NoCompositor):
+    """What the first review of standby found: it must end, whatever else fails around it."""
+
+    def setUp(self):
+        super().setUp()
+        self.monitors = {"DP-1": MON, "DP-2": MON2}
+        for target, fake in (("eva_desk.gtkutil.monitors", lambda: dict(self.monitors)), ("eva_desk.sources.idle.end_stale", lambda *a, **kw: None)):
+            patch = mock.patch(target, fake)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def real_app(self):
+        """standby_app(), with the real Standby on layers that have no window."""
+        from eva_desk.motion.player import Standby
+        app = standby_app()
+        app.standby = Standby(app, make=lambda a: ambient())
+        return app
+
+    def test_a_reading_that_is_not_there_yet(self):
+        from eva_desk.motion import triggers as T
+        res = {"cpu": None, "mem": "9.8G", "mem_pct": 31, "net": "lan", "down": "340K", "show": []}        # the sampler's first answer has no CPU share
+        self.assertEqual(T.readings(res)[0], "MAGI·1 CPU 00%")
+        self.assertEqual(T.readings({"cpu": "x", "mem": None, "net": None, "down": None}), ["MAGI·1 CPU 00%", "MAGI·2 RAM ", "MAGI·3 NET ↓"])
+        app = self.real_app()
+        app.res_state = res
+        self.assertEqual(app.command("standby on"), "ok")      # right after the daemon started
+        self.assertTrue(app.standby.up and all(layer.win.visible for layer in app.standby.layers()))
+        for layer in app.standby.layers():
+            layer.beat(time.monotonic())
+        self.assertTrue(app.standby.up)
+        app.command("standby off")
+        app.standby.end(at_once=True)
+
+    def test_a_start_that_fails_says_so(self):
+        app = standby_app()
+        app.standby.start = lambda *a: False
+        self.assertEqual(app.command("standby on"), "could not start (see the log)")
+
+    def test_one_loop_for_the_daemons_life(self):
+        app = standby_app()
+        app.command("standby on")
+        app.command("standby off")
+        app.command("standby on")
+        (first, _, _), (second, _, _) = app.standby.starts
+        self.assertIs(first, second)                           # so that what it could not find is said once, not at every start
+
+    def test_hiding_tells_its_owner_whatever_else_fails(self):
+        a, hidden = ambient(), []
+        a.on_hidden = hidden.append
+        a.play(dummy(), MON, dict, 0.0)
+        a.app = types.SimpleNamespace(_update_frames=lambda: 1 / 0)
+        with contextlib.redirect_stderr(io.StringIO()):
+            a.hide()                                           # it does not raise,
+        self.assertEqual((a.win.visible, a.up, hidden), (False, False, [a]))       # and the owner knows
+
+    def test_a_layer_that_cannot_come_up_is_not_up(self):
+        a = ambient()
+        a._keyboard = lambda mode: 1 / 0
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(a.play(dummy(), MON, dict, 0.0))
+        self.assertFalse(a.up or a.win.visible)
+        self.assertIn("eva-desk: motion:", out.getvalue())
+        a = ambient()
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(a.play(dummy(), MON, lambda: 1 / 0, 0.0))
+        self.assertIn("inputs:", out.getvalue())               # said as what it is, not as a piece that could not prepare
+
+    def test_the_rate_is_kept_sane(self):
+        for fps, ms in ((30, 33), (1000, 8), (0, 1000), (-5, 1000), ("fast", 33), (None, 33)):
+            a = ambient(fps=fps)
+            a.play(dummy(), MON, dict, 0.0)
+            self.assertEqual(a.timers[0][0], ms, fps)
+        app = standby_app()
+        for given, want in ((30, 30), ("60", 60), ("fast", 30), (None, 30), (0, 1), (5000, 120)):
+            app.cfg["ambient"]["fps"] = given
+            self.assertEqual(app._ambient_fps(), want, given)
+
+    def test_it_starts_on_what_it_can_and_never_half(self):
+        from eva_desk.motion.player import Standby
+        made = []
+
+        def make(app):
+            made.append(1)
+            if len(made) == 1:
+                raise RuntimeError("no surface")
+            return ambient()
+        s, piece = Standby(object(), make=make), dummy()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(s.start(piece, [MON, MON2], dict))             # one monitor could not have a layer; the other has it
+        self.assertEqual(s.monitors(), [MON2])
+        s.end(at_once=True)
+        s = Standby(object(), make=lambda app: 1 / 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(s.start(piece, [MON, MON2], dict))
+        self.assertFalse(s.up)                                 # and nothing is left thinking it is up
+        self.assertEqual(piece.released, 2)
+
+    def test_whatever_is_up_can_be_ended(self):
+        s, piece = screens()
+        s.start(piece, [MON, MON2], dict)
+        one, two = s.layers()
+        s.piece = None                                         # the books are wrong: a layer is up and standby thinks it is not
+        s.poke(one, "key")
+        self.assertTrue(one.leaving and two.leaving)
+        s.end(at_once=True)
+        self.assertFalse(one.win.visible or two.win.visible or s.up)
+        s.start(piece, [MON, MON2], dict)
+        one.hide = lambda: 1 / 0                               # one layer cannot be hidden: the other still goes
+        with contextlib.redirect_stderr(io.StringIO()):
+            s.end(at_once=True)
+        self.assertFalse(two.win.visible)
+        del one.hide
+        one.on_hidden = None                                   # and a layer that goes without saying so is still noticed
+        s.end(at_once=True)
+        self.assertFalse(s.up)
+
+    def test_the_lock_screen_comes_whatever_standby_does(self):
+        app = standby_app()
+        app.standby = types.SimpleNamespace(up=True, end=lambda at_once=False: 1 / 0)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(app.lock(), "ok")
+        self.assertEqual(app.hypr.execs, ["hyprlock"])
+
+    def test_a_band_that_fails_does_not_keep_standby_up(self):
+        app = standby_app()
+        app.command("standby on")
+        app.overlays = {"alarm": types.SimpleNamespace(show=lambda note: 1 / 0)}
+        with contextlib.redirect_stderr(io.StringIO()):
+            app._on_critical({"summary": "disk"})
+        self.assertEqual(app.standby.ends, [False])
+
+    def test_the_check_runs_even_when_the_refresh_fails(self):
+        app = standby_app()
+        app.command("standby on")
+        app.hypr.state["clients"] = [{"class": "gamescope", "workspace": {"id": 3}, "monitor": 0, "fullscreen": 0}]
+        app.refresh = lambda: 1 / 0
+        app.refresh_id = 7
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(app._run_refresh())
+        self.assertEqual(app.standby.ends, [True])
+
+    def test_the_pictures_come_from_one_folder(self):
+        from eva_desk.motion.amb import standby as S
+        with tempfile.TemporaryDirectory() as tmp:
+            theme = Path(tmp)
+            (theme / "motion").mkdir()
+            shutil.copy(ROOT / "assets/motion/full_body.jpg", theme / "motion" / "profile_body.jpg")       # a theme with one stray file
+            with mock.patch.object(config, "theme_dir", lambda: theme):
+                loop = S.StandbyLoop()
+                self.assertEqual(loop.shots(), ["profile", "field", "tilt", "stare"])
+                self.assertEqual(loop.art["profile"][0].get_width(), 1792)             # the desk's own, whole: not a mix of the two
+                for p in (ROOT / "assets/motion").iterdir():
+                    shutil.copy(p, theme / "motion" / p.name)
+                shutil.copy(ROOT / "assets/motion/full_body.jpg", theme / "motion" / "profile_body.jpg")
+                shutil.copy(ROOT / "assets/motion/full_eye.jpg", theme / "motion" / "profile_eye.jpg")
+                loop = S.StandbyLoop()
+                loop.shots()
+                self.assertEqual(loop.art["profile"][0].get_width(), 896)              # a theme that brings its own gets its own
+
+
+# ---------------------------------------------------------------- the living wallpaper
+def loop_piece():
+    piece = dummy(covers=False)
+    piece.length = None
+    return piece
+
+
+class AmbientPause(NoCompositor):
+    def test_pause_keeps_the_frame_and_stops_the_timer(self):
+        a = ambient()
+        a.play(loop_piece(), MON, dict, 100.0)
+        a.beat(104.0)
+        a.pause(105.0)
+        self.assertTrue(a.paused and a.win.visible and a.up)
+        self.assertEqual(a.cancelled, [1])
+        a.beat(110.0)                                          # a beat that was already on its way changes nothing
+        self.assertEqual(a.at, 4.0)
+        a.pause(111.0)                                         # twice is once
+        a.resume(125.0)
+        self.assertFalse(a.paused)
+        self.assertEqual([ms for ms, _ in a.timers], [33, 33])
+        a.beat(126.0)
+        self.assertEqual(a.at, 6.0)                            # the twenty seconds it was paused never happened
+        a.resume(127.0)                                        # not paused: nothing
+        self.assertEqual(len(a.timers), 2)
+
+    def test_it_can_be_drawn_again_while_paused(self):
+        a, asked = ambient(), []
+        a.play(loop_piece(), MON, lambda: asked.append(1) or {"n": len(asked)}, 0.0)
+        a.beat(3.0)
+        a.pause(3.0)
+        a.redraw()
+        self.assertEqual((a.at, a.ctx), (3.0, {"n": 3}))       # new inputs, the same moment
+        a.hide()
+        a.redraw()                                             # nothing on it: nothing happens
+        self.assertEqual(len(asked), 3)
+
+    def test_a_pause_does_not_outlive_its_piece(self):
+        a = ambient()
+        a.play(loop_piece(), MON, dict, 0.0)
+        a.pause(1.0)
+        a.hide()
+        self.assertFalse(a.paused)
+        a.resume(2.0)
+        self.assertEqual(len(a.timers), 1)
+        a.play(loop_piece(), MON, dict, 5.0)
+        self.assertFalse(a.paused)
+        a.pause(6.0)
+        a.leave(7.0, 0.19)                                     # a paused piece that must go goes at once
+        self.assertFalse(a.up or a.win.visible)
+
+    def test_a_piece_that_does_not_cover_takes_no_input(self):
+        a = ambient()
+        a.play(loop_piece(), MON, dict, 0.0)
+        self.assertTrue(a.win.surface.region.is_empty())
+
+    def test_the_layer_it_sits_on(self):
+        from eva_desk import overlays as O
+        made = []
+
+        def window(app, monitor, layer, namespace, **kw):
+            made.append((layer, namespace, kw.get("keyboard")))
+            return types.SimpleNamespace(set_child=lambda view: None)
+        with mock.patch.object(O, "layer_window", window), mock.patch.object(O, "_View", lambda painter: FakeView()):
+            O._Overlay(object(), "eva-x")
+            O._Overlay(object(), "eva-wallpaper", layer="background")
+        self.assertEqual(made, [("overlay", "eva-x", "none"), ("background", "eva-wallpaper", "none")])
+
+
+class PauseRules(unittest.TestCase):
+    def test_what_pauses_the_loops(self):
+        from eva_desk.motion import triggers as T
+        mons = [{"id": 0, "name": "DP-1", "activeWorkspace": {"id": 1}}, {"id": 1, "name": "DP-2", "activeWorkspace": {"id": 5}}]
+        pats, both = ["^steam_app_", "^gamescope$"], {"DP-1", "DP-2"}
+        term = {"class": "kitty", "workspace": {"id": 1}, "monitor": 0, "fullscreen": 0}
+        full = {"class": "mpv", "workspace": {"id": 5}, "monitor": 1, "fullscreen": 2}
+        maxed = {"class": "firefox", "workspace": {"id": 1}, "monitor": 0, "fullscreen": 1}
+        hidden_game = {"class": "steam_app_1145360", "workspace": {"id": 9}, "monitor": 0, "fullscreen": 0}
+        other_game = {"class": "gamescope", "workspace": {"id": 5}, "monitor": 1, "fullscreen": 2}
+        for clients, flags, want in (
+                ([term], {}, set()),
+                ([term, maxed], {}, set()),                     # maximised is not fullscreen
+                ([term, full], {}, {"DP-2"}),                   # a fullscreen window pauses its own monitor
+                ([term, hidden_game], {}, both),                # a game on a workspace nobody is looking at pauses everything
+                ([term, other_game], {}, both),                 # and so does one on the other monitor
+                ([term], {"locked": True}, both),
+                ([term], {"locked": None}, set()),              # Hyprland did not say: not locked
+                ([term], {"asleep": True}, both),
+                ([term], {"off": True}, both),                  # eva-ctl ambient off
+                ([term], {"standby": True}, both)):             # standby covers them
+            self.assertEqual(T.paused_monitors(mons, clients, pats, **flags), want, (clients, flags))
+        self.assertEqual(T.paused_monitors(None, None, pats), set())
+        self.assertEqual(T.paused_monitors(None, None, pats, off=True), set())    # nothing to pause
+
+
+class WallpaperTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk import draw as d, gtkutil
+        from eva_desk.motion import render
+        from eva_desk.motion.amb import wallpaper
+        self.Wp, self.render, self.d, self.gtkutil = wallpaper, render, d, gtkutil
+
+    def flat(self, colour, w=344, h=144):
+        def paint(cr):
+            self.d.rgba(cr, colour)
+            cr.paint()
+        return self.gtkutil.render_texture(w, h, paint)
+
+    def ctx(self, **more):
+        return {"picture": self.flat(self.d.BONE), "drift": 0.08, "lap": 30.0, "ripples": False, "embers": False, **more}
+
+    def frame(self, t, w=1720, h=720, **more):
+        return self.render.frame(self.Wp.WallpaperLoop(), t, w, h, self.ctx(**more))
+
+    def test_the_camera(self):
+        Wp = self.Wp
+        self.assertEqual(Wp.camera(0.0, 0.08, 30.0)[0], 1.035)
+        self.assertAlmostEqual(Wp.camera(15.0, 0.08, 30.0)[0], 1.115)          # pushed in by the drift, half a lap in
+        self.assertAlmostEqual(Wp.camera(30.0, 0.08, 30.0)[0], 1.035)
+        zooms = [Wp.camera(t / 10, 0.08, 30.0) for t in range(0, 1200)]
+        self.assertTrue(all(1.035 <= z <= 1.1151 and abs(dx) <= 0.015 and abs(dy) <= 0.015 for z, dx, dy in zooms))
+        self.assertGreater(max(dx for _, dx, _ in zooms), 0.014)               # the pan really reaches a hundredth and a half
+        self.assertEqual(Wp.camera(7.0, 0.0, 30.0), (1.0, 0.0, 0.0))           # no drift: a still picture
+        self.assertEqual(Wp.camera(7.0, 0.08, 0.0), (1.0, 0.0, 0.0))           # and no lap is no motion, not a division by nothing
+
+    def test_the_picture_always_covers_the_frame(self):
+        Wp = self.Wp
+        for (tw, th), (W, H) in (((344, 144), (1720, 720)), ((1920, 1080), (1720, 720)), ((1080, 1920), (1720, 720)), ((3440, 1440), (1280, 2275.6))):
+            for i in range(400):                               # more than three laps of every period
+                x, y, w, h = Wp.place(tw, th, W, H, i * 0.37, 0.08, 30.0)
+                self.assertTrue(x <= 0 and y <= 0 and x + w >= W and y + h >= H, (tw, th, W, H, i, x, y, w, h))
+        for t in (0.0, 9.0, 21.0):
+            for w, h in ((1720, 720), (1080, 1920)):
+                f = self.frame(t, w, h)
+                self.assertEqual(set(grid(f)), {255}, (t, w, h))
+                self.assertEqual((alpha(f, 0, 0), alpha(f, w - 1, h - 1), pink(f)), (255, 255, 0))
+
+    def test_it_moves_and_never_jumps(self):
+        Wp = self.Wp
+        boxes = [Wp.place(3440, 1440, 1720, 720, i / 30, 0.08, 30.0) for i in range(30 * 40)]
+        step = max(max(abs(a - b) for a, b in zip(one, two)) for one, two in zip(boxes, boxes[1:]))
+        self.assertLess(step, 1.2)                             # design px from one frame to the next, at thirty a second
+        self.assertGreater(max(b[2] for b in boxes) - min(b[2] for b in boxes), 100)       # and over a lap it is plain to see
+
+    def test_a_new_picture_fades_in_over_the_old_one(self):
+        d = self.d
+        old, new = self.flat(d.BONE), self.flat(d.GOLD)
+        self.assertTrue(near(px(self.frame(3.0, picture=new, previous=old, fade=0.0), 860, 360), BONE))
+        self.assertTrue(near(px(self.frame(3.0, picture=new, previous=old, fade=1.0), 860, 360), GOLD))
+        mid = px(self.frame(3.0, picture=new, previous=old, fade=0.5), 860, 360)
+        self.assertTrue(BONE[0] > mid[0] > GOLD[0] and mid[3] == 255, mid)     # blue: between the two
+        f = self.frame(3.0, picture=new, previous=None, fade=0.5)              # nothing to fade from: it fades in over the desk
+        self.assertAlmostEqual(alpha(f, 860, 360), 128, delta=3)
+        ground = self.d.hexc("#204060")                                        # or over the colour that was there before it
+        f = self.frame(3.0, picture=new, previous=None, fade=0.0, ground=ground)
+        self.assertEqual(px(f, 860, 360), (0x60, 0x40, 0x20, 255))
+        f = self.frame(3.0, picture=new, previous=None, fade=0.5, ground=ground)
+        self.assertEqual(alpha(f, 860, 360), 255)
+        f = self.frame(3.0, picture=new, previous=None, fade=1.0, ground=ground)
+        self.assertTrue(near(px(f, 860, 360), GOLD))
+
+    def test_a_colour_is_a_plain_fill_that_does_not_move(self):
+        d = self.d
+        ctx = {"colour": d.hexc("#204060"), "ripples": True, "embers": True, "drift": 0.08, "lap": 30.0}
+        a = self.render.frame(self.Wp.WallpaperLoop(), 2.0, 1720, 720, ctx)
+        b = self.render.frame(self.Wp.WallpaperLoop(), 13.0, 1720, 720, ctx)
+        self.assertTrue(same(a, b))
+        self.assertEqual(px(a, 5, 5), (0x60, 0x40, 0x20, 255))
+
+    def test_nothing_to_show_paints_nothing(self):
+        for ctx in ({}, {"ripples": True, "embers": True}, {"picture": None, "previous": None}):
+            self.assertIsNone(box(self.render.frame(self.Wp.WallpaperLoop(), 2.0, 1720, 720, ctx)))
+
+    def test_ripples(self):
+        Wp, d = self.Wp, self.d
+        self.assertEqual(Wp.rings(2.0), [(0, 2.0)])
+        self.assertEqual(Wp.rings(5.0), [])                    # the first has faded (4.2 s), the next starts at 5.5
+        self.assertEqual([k for k, _ in Wp.rings(6.0)], [1])
+        self.assertEqual([k for k, _ in Wp.rings(5.5 * 400 + 1.0)], [400])
+        for k in range(50):
+            cx, cy = Wp.ring_centre(k, 1720, 720)
+            self.assertTrue(0.12 * 1720 <= cx <= 0.88 * 1720 and 0.15 * 720 <= cy <= 0.85 * 720)
+        plain, rippled = self.frame(2.0), self.frame(2.0, ripples=True)
+        self.assertFalse(same(plain, rippled))
+        self.assertFalse(same(rippled, self.frame(2.0, ripples=True, berserk=True)))       # orange when the desk is berserk
+        self.assertTrue(same(self.frame(5.2), self.frame(5.2, ripples=True)))              # between two rings there is none
+        self.assertEqual(pink(rippled), 0)
+
+    def test_embers(self):
+        Wp = self.Wp
+        now, later = Wp.embers(10.0, 1720, 720, 0.0), Wp.embers(11.0, 1720, 720, 0.0)
+        self.assertEqual(len(now), 70)
+        self.assertTrue(all(1.0 <= size <= 2.8 and 0 <= a <= 0.65 and -110 <= y <= 740 for x, y, size, a, kind in now))
+        self.assertTrue(8 <= sum(kind == "gold" for *_, kind in now) <= 22)
+        rising = sum(b[1] < a[1] for a, b in zip(now, later))
+        self.assertGreaterEqual(rising, 66)                    # all of them, but for the few that went round
+        self.assertTrue(all(9 <= a[1] - b[1] <= 25.01 for a, b in zip(now, later) if b[1] < a[1]))
+        self.assertFalse(same(self.frame(10.0), self.frame(10.0, embers=True)))
+        hot = Wp.embers(10.0, 1720, 720, 0.0, berserk=True)
+        self.assertEqual({kind for *_, kind in hot}, {"led"})
+
+    def test_nothing_is_made_after_the_first_frame(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        from eva_desk.motion.kit import Kit
+        loop, store, sizes, ctx = self.Wp.WallpaperLoop(), {}, [], self.ctx(ripples=True, embers=True)
+        for t in (1.0, 2.0, 3.0, 6.5, 8.0):
+            kit = Kit(Gtk.Snapshot(), 1720, 720, 1.0, store)
+            loop.paint(kit, t, ctx)
+            kit.close()
+            sizes.append(len(store))
+        self.assertEqual(len(set(sizes)), 1, sizes)
+
+    def test_odd_inputs(self):
+        for more in ({"drift": "far"}, {"lap": None}, {"fade": 7}, {"fade": -1}, {"fade": "x"}, {"picture": None, "previous": self.flat(self.d.GOLD)},
+                     {"colour": "red"}, {"berserk": 1}):
+            f = self.frame(2.0, ripples=True, embers=True, **more)
+            self.assertEqual(pink(f), 0, more)
+
+    def test_the_renderer_shows_it_on_a_stand_in_picture(self):
+        from eva_desk import motion
+        self.assertEqual(list(motion.loops())[:2], ["standby", "wallpaper"])
+        loop = motion.loops()["wallpaper"]()
+        self.assertEqual((loop.name, loop.length, loop.covers, loop.lap), ("wallpaper", None, False, 30.0))
+        f = self.render.frame(loop, 3.0, 1720, 720, self.render.fixture_ctx())
+        self.assertEqual(set(grid(f)), {255})
+        self.assertFalse(same(f, self.render.frame(loop, 9.0, 1720, 720, self.render.fixture_ctx())))
+
+
+def living(pictures=None, **ambient_cfg):
+    """A Living whose layers are ambient(), whose clock is its `now` and whose decoder hands out `files`."""
+    from eva_desk.motion.living import Living
+    cfg = config.load("/nonexistent")
+    cfg["ambient"].update(ambient_cfg)
+    host = Living(object(), cfg, make=lambda app: ambient(keyboard="none"), clock=lambda: host.now,
+                  decode=lambda path, done: (host.asked.append(path), done(*host.files.get(path, (None, "no such file")))))
+    host.now, host.files, host.asked = 0.0, pictures or {}, []
+    return host
+
+
+class LivingTest(NoCompositor):
+    def setUp(self):
+        super().setUp()
+        from eva_desk import draw as d, gtkutil
+
+        def flat(colour):
+            return gtkutil.render_texture(8, 4, lambda cr: (d.rgba(cr, colour), cr.paint()))
+        self.A, self.B = flat(d.BONE), flat(d.GOLD)
+        self.files = {"/a.jpg": (self.A, None), "/b.jpg": (self.B, None)}
+
+    def test_the_first_picture_goes_up_whole(self):
+        host = living(self.files)
+        self.assertTrue(host.show("DP-1", MON, "/a.jpg"))
+        screen = host.screens["DP-1"]
+        layer = screen.layer
+        self.assertTrue(layer.up and layer.win.visible and not layer.paused)
+        self.assertEqual(([ms for ms, _ in layer.timers], layer.keyboard), ([33], ["none"]))
+        self.assertTrue(layer.win.surface.region.is_empty())  # clicks go through to the desk
+        ctx = layer.inputs()
+        self.assertEqual((ctx["picture"], ctx["previous"], ctx["ground"], ctx["colour"]), (self.A, None, None, None))
+        self.assertEqual(ctx["fade"], 1.0)                     # nothing of its own to fade from: what lies under it is not the desk's to show
+        self.assertEqual((ctx["drift"], ctx["lap"], ctx["ripples"], ctx["embers"], ctx["berserk"]), (0.08, 30.0, True, True, False))
+        self.assertTrue(host.shows("DP-1") and not host.shows("DP-2"))
+
+    def test_a_picture_after_a_colour_fades_in_over_that_colour(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "#204060")
+        layer, blue = host.screens["DP-1"].layer, (0x20 / 255, 0x40 / 255, 0x60 / 255, 1.0)
+        host.now = 4.0
+        host.show("DP-1", MON, "/a.jpg")
+        ctx = layer.inputs()
+        self.assertEqual((ctx["picture"], ctx["previous"], ctx["ground"], ctx["fade"], ctx["colour"]), (self.A, None, blue, 0.0, None))
+        self.assertFalse(layer.paused)
+        host.now = 4.45
+        self.assertAlmostEqual(layer.inputs()["fade"], 0.5)
+        host.now = 6.0
+        ctx = layer.inputs()
+        self.assertEqual((ctx["fade"], ctx["ground"]), (1.0, None))
+
+    def test_the_next_one_fades_in_over_it(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "/a.jpg")
+        layer = host.screens["DP-1"].layer
+        host.now = 10.0
+        self.assertTrue(host.show("DP-1", MON, "/b.jpg"))
+        ctx = layer.inputs()
+        self.assertEqual((ctx["picture"], ctx["previous"], ctx["fade"]), (self.B, self.A, 0.0))
+        self.assertEqual(len(layer.timers), 1)                 # the same layer goes on; nothing was started again
+        host.now = 10.9
+        self.assertEqual(layer.inputs()["fade"], 1.0)
+        self.assertIsNone(layer.inputs()["previous"])          # the old picture is let go once it is covered
+        self.assertTrue(host.show("DP-1", MON, "/b.jpg"))      # the same picture again: nothing to do
+        self.assertEqual(host.asked, ["/a.jpg", "/b.jpg"])
+
+    def test_no_fade_when_the_duration_is_nothing(self):
+        host = living(self.files)
+        host.fade = 0.0
+        host.show("DP-1", MON, "/a.jpg")
+        self.assertEqual(host.screens["DP-1"].layer.inputs()["fade"], 1.0)
+
+    def test_a_picture_that_cannot_be_read(self):
+        host, failed = living(self.files), []
+        host.on_failed = lambda name, target: failed.append((name, target))
+        host.show("DP-1", MON, "/a.jpg")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            host.show("DP-1", MON, "/broken.webp")
+            host.show("DP-1", MON, "/a.jpg")
+            host.show("DP-1", MON, "/broken.webp")
+        self.assertEqual(failed, [("DP-1", "/broken.webp")] * 2)
+        self.assertEqual(out.getvalue().count("/broken.webp"), 1)                  # said once
+        self.assertFalse(host.shows("DP-1") or host.screens["DP-1"].layer.win.visible)      # the monitor is given back each time
+
+    def test_a_colour_is_a_still_fill(self):
+        host = living(self.files)
+        self.assertTrue(host.show("DP-1", MON, "#204060"))
+        layer = host.screens["DP-1"].layer
+        self.assertTrue(layer.up and layer.paused)             # nothing moves: no timer
+        self.assertEqual(layer.ctx["colour"], (0x20 / 255, 0x40 / 255, 0x60 / 255, 1.0))
+        host.pause(set())
+        self.assertTrue(layer.paused)                          # resuming the loops does not start a timer for a colour
+        host.show("DP-1", MON, "/a.jpg")
+        self.assertFalse(layer.paused)
+        self.assertEqual((layer.inputs()["colour"], layer.inputs()["picture"]), (None, self.A))
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            for bad in ("#nope", "#abc", "#1234567", "#", "#nope"):
+                self.assertTrue(host.show("DP-1", MON, bad))   # not a colour: what is up stays up, rather than a blank monitor
+            self.assertTrue(layer.up and layer.inputs()["picture"] is self.A)
+            self.assertFalse(host.show("DP-2", MON2, "#nope")) # with nothing up there, the caller may try something else
+        self.assertEqual(out.getvalue().count("#nope"), 1)     # said once
+
+    def test_a_decode_that_comes_late_is_dropped(self):
+        host, waiting = living(self.files), []
+        host.decode = lambda path, done: waiting.append((path, done))
+        host.show("DP-1", MON, "/a.jpg")
+        host.show("DP-1", MON, "/b.jpg")                       # the workspace changed again before the first was read
+        self.assertFalse(host.shows("DP-1"))
+        waiting[0][1](self.A, None)
+        self.assertFalse(host.shows("DP-1"))
+        waiting[1][1](self.B, None)
+        ctx = host.screens["DP-1"].layer.inputs()
+        self.assertEqual((ctx["picture"], ctx["previous"]), (self.B, None))
+        host.forget([])
+        waiting[1][1](self.B, None)                            # and one for a monitor that is gone
+        self.assertEqual(host.screens, {})
+
+    def test_pausing(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "/a.jpg")
+        host.show("DP-2", MON2, "/a.jpg")
+        one, two = host.screens["DP-1"].layer, host.screens["DP-2"].layer
+        host.now = 5.0
+        host.pause({"DP-2", "DP-9"})
+        self.assertEqual((one.paused, two.paused), (False, True))
+        host.show("DP-2", MON2, "/b.jpg")                      # the workspace changes while it stands still
+        self.assertEqual((two.ctx["picture"], two.ctx["previous"], two.ctx["fade"]), (self.B, None, 1.0))      # swapped, not faded
+        self.assertTrue(two.paused)
+        host.pause({"DP-1", "DP-2"})
+        host.pause(set())
+        self.assertEqual((one.paused, two.paused), (False, False))
+        host.pause({"DP-1"})
+        host.show("DP-1", MON, "/b.jpg")
+        host.forget(["DP-1"])
+        self.assertEqual(list(host.screens), ["DP-1"])
+        self.assertFalse(two.win.visible)
+
+    def test_a_monitor_that_starts_out_paused(self):
+        host = living(self.files)
+        host.pause({"DP-1"})
+        host.show("DP-1", MON, "/a.jpg")
+        layer = host.screens["DP-1"].layer
+        self.assertTrue(layer.up and layer.paused)
+        self.assertEqual(layer.ctx["fade"], 1.0)               # whole at once: nothing is running to fade it in
+
+    def test_berserk(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "/a.jpg")
+        host.pause({"DP-1"})
+        host.set_berserk(True)
+        self.assertTrue(host.screens["DP-1"].layer.ctx["berserk"])                 # drawn again, though it stands still
+
+    def test_settings(self):
+        host = living(self.files, drift=0, lap=90, ripples=False, embers=False, fps=10)
+        host.show("DP-1", MON, "/a.jpg")
+        ctx = host.screens["DP-1"].layer.inputs()
+        self.assertEqual((ctx["drift"], ctx["lap"], ctx["ripples"], ctx["embers"]), (0.0, 90.0, False, False))
+        host = living(self.files, drift="far", lap="long")
+        self.assertEqual((host.drift, host.lap), (0.08, 30.0))
+
+    def test_no_monitor_and_stopping(self):
+        host = living(self.files)
+        self.assertFalse(host.show("DP-1", None, "/a.jpg"))
+        host.show("DP-1", MON, "/a.jpg")
+        host.stop()
+        self.assertFalse(host.shows("DP-1") or host.screens["DP-1"].layer.win.visible)
+        self.assertTrue(host.show("DP-1", MON, "/a.jpg"))      # and it can come back
+        self.assertTrue(host.shows("DP-1"))
+
+    def test_a_monitor_that_was_replugged(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "/a.jpg")
+        again = FakeMonitor(3440, 1440)
+        self.assertTrue(host.show("DP-1", again, "/a.jpg"))    # the same name and picture, another monitor behind it
+        self.assertEqual((host.screens["DP-1"].layer.w, host.asked), (3440, ["/a.jpg", "/a.jpg"]))
+
+
+class FakeLiving:
+    def __init__(self):
+        self.shown, self.pauses, self.berserk, self.forgot, self.answer = [], [], [], [], True
+
+    def show(self, name, gdk, target):
+        self.shown.append((name, gdk, target))
+        return self.answer
+
+    def pause(self, names, everything=False):
+        self.pauses.append(ALL if everything else set(names))
+
+    def set_berserk(self, on):
+        self.berserk.append(on)
+
+    def forget(self, alive):
+        self.forgot.append(set(alive))
+
+
+def living_app(**ambient_cfg):
+    """standby_app(), with a living wallpaper that only notes what it is told."""
+    app = standby_app()
+    app.cfg["ambient"].update(ambient_cfg)
+    app.living, app.walls = FakeLiving(), None
+    return app
+
+
+BOTH = {"DP-1", "DP-2"}
+ALL = "every monitor, whatever its name"        # what a fake host notes when it is told to stand still everywhere
+
+
+def wallpapers(awww=True, **settings):
+    """The real Wallpapers over a pool of two pictures, with awww installed or not."""
+    from eva_desk.wallpaper import Wallpapers
+    cfg = config.load("/nonexistent")
+    cfg["wallpapers"].update(pool=["/pics/a.jpg", "/pics/b.jpg"], **settings)
+    with mock.patch("shutil.which", side_effect=lambda b: "/usr/bin/awww" if awww and b == "awww" else None):
+        walls = Wallpapers(cfg)
+    walls.pool = list(cfg["wallpapers"]["pool"])               # as written, not shuffled
+    return walls
+
+
+class LivingWiring(unittest.TestCase):
+    def setUp(self):
+        self.monitors = {"DP-1": "GDK-1", "DP-2": "GDK-2"}
+        patch = mock.patch("eva_desk.gtkutil.monitors", lambda: dict(self.monitors))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_defaults(self):
+        amb = config.load("/nonexistent")["ambient"]
+        self.assertEqual({k: amb[k] for k in ("fps", "wallpaper", "drift", "lap", "ripples", "embers")},
+                         {"fps": 30, "wallpaper": True, "drift": 8, "lap": 30, "ripples": True, "embers": True})
+        self.assertIn("|standby|wallpaper|wall|", (ROOT / "hypr" / "eva.lua").read_text())
+        self.assertIn("eva-ctl ambient", (ROOT / "bin" / "eva-ctl").read_text())
+        self.assertIn("\nwallpaper = true", (ROOT / "config" / "eva.example.toml").read_text())
+
+    def walls(self, awww=True, **settings):
+        return wallpapers(awww, **settings)
+
+    def test_the_wallpaper_is_handed_over(self):
+        walls, taken = self.walls(awww=False), []              # no awww at all: the daemon's own wallpaper needs none
+        walls.living = lambda monitor, target: taken.append((monitor, target)) or True
+        with mock.patch("subprocess.Popen") as popen:
+            walls.set_for("DP-1", 1, "")
+            walls.set_for("DP-1", 1, "")                       # the same again: nothing
+            walls.set_for("DP-1", 2, "")
+            walls.forget("DP-1")                               # the monitor was replugged: what it shows is not known any more
+            walls.set_for("DP-1", 2, "")
+        self.assertEqual(taken, [("DP-1", "/pics/a.jpg"), ("DP-1", "/pics/b.jpg"), ("DP-1", "/pics/b.jpg")])
+        popen.assert_not_called()
+
+    def test_what_is_not_taken_goes_to_awww(self):
+        walls = self.walls()
+        walls.living = lambda monitor, target: False
+        with mock.patch("subprocess.Popen") as popen:
+            walls.set_for("DP-1", 1, "")
+            self.assertEqual(popen.call_args[0][0][:4], ["awww", "img", "-o", "DP-1"])
+            walls.direct("DP-1", "#204060")
+            self.assertEqual(popen.call_args[0][0], ["awww", "clear", "-o", "DP-1", "204060"])
+        walls = self.walls(awww=False)                         # neither: nothing is run, nothing raises
+        walls.living = lambda monitor, target: False
+        with mock.patch("subprocess.Popen") as popen:
+            walls.set_for("DP-1", 1, "")
+            walls.direct("DP-1", "/pics/a.jpg")
+        popen.assert_not_called()
+        walls = self.walls(awww=False, enabled=False)          # wallpapers switched off: not even handed over
+        walls.living = lambda monitor, target: 1 / 0
+        walls.set_for("DP-1", 1, "")
+
+    def test_the_daemon_hands_it_to_its_own_layer(self):
+        app = living_app()
+        self.assertTrue(app._living_show("DP-1", "/pics/a.jpg"))
+        self.assertEqual(app.living.shown, [("DP-1", "GDK-1", "/pics/a.jpg")])
+        self.assertFalse(app._living_show("HDMI-9", "/pics/a.jpg"))                # not a monitor it knows
+        app.living.answer = False
+        self.assertFalse(app._living_show("DP-1", "/pics/b.jpg"))
+        app.living = None
+        self.assertFalse(app._living_show("DP-1", "/pics/a.jpg"))
+
+    def test_a_picture_it_cannot_read_goes_to_awww(self):
+        app, sent = living_app(), []
+        app.walls = types.SimpleNamespace(direct=lambda name, target: sent.append((name, target)))
+        app._living_failed("DP-1", "/pics/broken.webp")
+        self.assertEqual(sent, [("DP-1", "/pics/broken.webp")])
+        app.walls = None
+        app._living_failed("DP-1", "/pics/broken.webp")
+
+    def test_when_the_loops_stand_still(self):
+        app = living_app()
+        app._ambient_sync()
+        self.assertEqual(app.living.pauses, [set()])
+        app.hypr.state["clients"] = [{"class": "mpv", "workspace": {"id": 5}, "monitor": 1, "fullscreen": 2}]
+        app._ambient_sync()
+        self.assertEqual(app.living.pauses[-1], {"DP-2"})
+        app.hypr.state["clients"] = [{"class": "steam_app_7", "workspace": {"id": 9}, "monitor": 0, "fullscreen": 0}]
+        app._ambient_sync()
+        self.assertEqual(app.living.pauses[-1], BOTH)
+        app.hypr.state["clients"] = []
+        for flag in ("asleep", "ambient_off", "session_locked"):
+            setattr(app, flag, True)
+            app.hypr.asked.clear()
+            app._ambient_sync()
+            self.assertEqual((app.living.pauses[-1], app.hypr.asked), (ALL, []), flag)      # everywhere, and Hyprland need not say where
+            setattr(app, flag, False)
+        app._ambient_sync()
+        self.assertEqual(app.living.pauses[-1], set())
+        n = len(app.living.pauses)
+        app.hypr.fail = OSError("gone")                        # Hyprland does not answer: they stay as they are
+        app._ambient_sync()
+        self.assertEqual(len(app.living.pauses), n)
+        app.living = None                                      # no loops: nothing to ask Hyprland about
+        app.hypr.asked.clear()
+        app._ambient_sync()
+        self.assertEqual(app.hypr.asked, [])
+
+    def test_the_command(self):
+        app = living_app()
+        self.assertEqual(app.command("ambient"), "ambient on")
+        self.assertEqual(app.command("ambient off"), "ambient off")
+        self.assertEqual(app.living.pauses[-1], ALL)
+        self.assertEqual(app.command("ambient"), "ambient off")
+        self.assertEqual(app.command("ambient on"), "ambient on")
+        self.assertEqual(app.living.pauses[-1], set())
+        self.assertEqual(app.command("ambient sideways"), "ambient: on | off")
+
+    def test_lock_sleep_and_standby_stop_them(self):
+        app = living_app()
+        app.hypr.state["locked"] = {"locked": True}
+        app.cfg["motion"]["wake"] = False
+        app.standby = None                                     # the watch also looks for the loops' sake
+        app._watch_lock(now=0.0)
+        self.assertEqual((app.living.pauses[-1], len(app.later)), (ALL, 1))
+        n = len(app.living.pauses)
+        app.hypr.state["locked"] = None                        # Hyprland did not say: it is still locked, as far as anyone knows
+        app._watch_lock(now=1.0)
+        self.assertEqual((len(app.living.pauses), app.session_locked), (n, True))
+        app.hypr.state["locked"] = {"locked": False}
+        app._watch_lock(now=2.0)
+        self.assertEqual(app.living.pauses[-1], set())
+        n = len(app.living.pauses)
+        app._watch_lock(now=4.0)                               # nothing changed: nothing is told
+        self.assertEqual(len(app.living.pauses), n)
+        app._on_sleep(True)
+        self.assertEqual(app.living.pauses[-1], ALL)
+        app._on_sleep(False)
+        self.assertEqual(app.living.pauses[-1], set())
+        app = living_app()
+        app.command("standby on")
+        self.assertEqual(app.living.pauses[-1], ALL)           # nobody sees them under standby
+        app.standby.end()
+        app._standby_ended()
+        self.assertEqual(app.living.pauses[-1], set())
+
+    def test_berserk_reaches_the_wallpaper(self):
+        app = living_app()
+        app.cfg["overlays"].update(berserk=90, berserk_seconds=0)
+        app._berserk_check(99, 10)
+        app._berserk_check(10, 10)
+        self.assertEqual(app.living.berserk, [True, False])
+
+
+class LoopsHardening(NoCompositor):
+    """What the review of the wallpaper found: the desk keeps its wallpaper, and the loops stand still when told."""
+
+    def setUp(self):
+        super().setUp()
+        from eva_desk import draw as d, gtkutil
+        self.A = gtkutil.render_texture(8, 4, lambda cr: (d.rgba(cr, d.BONE), cr.paint()))
+        self.files = {"/pics/a.jpg": (self.A, None)}           # b.jpg cannot be read
+        self.monitors = {"DP-1": MON, "DP-2": MON2}
+        patch = mock.patch("eva_desk.gtkutil.monitors", lambda: dict(self.monitors))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_a_replugged_monitor_gets_a_new_layer(self):
+        host = living(self.files)
+        host.show("DP-1", MON, "/pics/a.jpg")
+        old, again = host.screens["DP-1"].layer, FakeMonitor(3440, 1440)
+        self.assertTrue(host.show("DP-1", again, "/pics/a.jpg"))               # its window went with the monitor: never shown again
+        new = host.screens["DP-1"].layer
+        self.assertTrue(new is not old and old.win.destroyed and new.up and not old.up)
+        self.assertEqual(new.w, 3440)
+
+    def test_a_layer_that_breaks_gives_the_monitor_back(self):
+        host, failed = living(self.files), []
+        host.on_failed = lambda name, target: failed.append((name, target))
+        host.show("DP-1", MON, "/pics/a.jpg")
+        host.screens["DP-1"].layer._fail()
+        self.assertEqual((failed, host.shows("DP-1")), ([("DP-1", "/pics/a.jpg")], False))
+        self.assertTrue(host.show("DP-1", MON, "/pics/a.jpg"))                 # and it may be tried again
+        self.assertEqual((host.shows("DP-1"), host.asked), (True, ["/pics/a.jpg"] * 2))
+
+    def test_the_desk_always_has_its_wallpaper(self):
+        app, walls, host = living_app(), wallpapers(), living(self.files)
+        app.living, app.walls, walls.living, host.on_failed = host, walls, app._living_show, app._living_failed
+        app.gdk_of = {"DP-1": "a monitor from before it was replugged"}        # not where the layer's monitor comes from
+        with mock.patch("subprocess.Popen") as popen, contextlib.redirect_stdout(io.StringIO()):
+            walls.set_for("DP-1", 1, "")
+            self.assertTrue(host.shows("DP-1") and host.screens["DP-1"].gdk is MON)
+            popen.assert_not_called()
+            walls.set_for("DP-1", 2, "")                                       # one it cannot read: awww shows it
+            self.assertFalse(host.shows("DP-1"))
+            self.assertEqual(popen.call_args[0][0][-1], "/pics/b.jpg")
+            walls.set_for("DP-1", 1, "")
+            self.assertTrue(host.shows("DP-1"))
+            host.screens["DP-1"].layer._fail()                                 # the layer breaks: awww shows what it showed
+            self.assertEqual((host.shows("DP-1"), popen.call_args[0][0][-1]), (False, "/pics/a.jpg"))
+            walls.living = lambda monitor, target: 1 / 0                       # and a hand-over that raises is a hand-over refused
+            with contextlib.redirect_stderr(io.StringIO()):
+                walls.set_for("DP-1", 2, "")
+            self.assertEqual((popen.call_count, popen.call_args[0][0][-1]), (3, "/pics/b.jpg"))
+
+    def test_hiding_lets_go_of_what_was_shown(self):
+        a = ambient()
+        a.play(dummy(), MON, lambda: {"picture": self.A}, 0.0)
+        a.hide()
+        self.assertEqual(a.ctx, {})                            # a layer that is kept does not keep twenty megabytes with it
+
+    def test_reading_a_picture(self):
+        from gi.repository import GLib
+        from eva_desk.motion import living as L
+        got = {}
+        good, folder = str(ROOT / "assets/motion/profile_eye.jpg"), str(ROOT / "assets")
+        for path in (good, "/nowhere/at/all.jpg", folder, "", None, "a\0b"):
+            L.decode(path, lambda texture, why, path=path: got.setdefault(path, []).append((texture, why)))
+        import warnings
+        end = time.monotonic() + 5
+        with warnings.catch_warnings():                        # PyGObject's own, about asyncio, when a main loop is turned by hand
+            warnings.simplefilter("ignore", DeprecationWarning)
+            while len(got) < 6 and time.monotonic() < end:     # the answers come back through the main loop
+                GLib.MainContext.default().iteration(False)
+                time.sleep(0.005)
+        self.assertEqual(sorted(map(str, got)), sorted(map(str, (good, "/nowhere/at/all.jpg", folder, "", None, "a\0b"))))
+        self.assertTrue(all(len(answers) == 1 for answers in got.values()))               # each exactly once
+        self.assertEqual(got[good][0][0].get_width(), 1792)
+        for path in ("/nowhere/at/all.jpg", folder, "", None, "a\0b"):
+            texture, why = got[path][0]
+            self.assertTrue(texture is None and why, path)     # whatever went wrong, it is an answer and not a silence
+
+    def test_odd_settings(self):
+        from eva_desk.motion.amb import wallpaper as Wp
+        self.assertEqual((living(self.files, drift=float("inf")).drift, living(self.files, drift=float("nan")).drift), (0.08, 0.08))
+        self.assertEqual((living(self.files, drift=5000).drift, living(self.files, lap=float("inf")).lap), (1.0, 30.0))
+        for drift, lap in ((float("inf"), 30.0), (float("nan"), 30.0), (0.08, float("nan")), (0.08, float("inf"))):
+            self.assertEqual(Wp.camera(7.0, drift, lap), (1.0, 0.0, 0.0), (drift, lap))
+
+    def test_a_sync_that_cannot_ask_hyprland_tries_again(self):
+        app = living_app()
+        app.hypr.fail = OSError("busy")
+        app._ambient_sync()
+        self.assertEqual(([ms for ms, _ in app.later], app.living.pauses), ([1000], []))
+        app._ambient_sync()                                    # one retry is owed, not one for every failure
+        self.assertEqual(len(app.later), 1)
+        app.hypr.fail = None
+        app.hypr.state["clients"] = [{"class": "gamescope", "workspace": {"id": 3}, "monitor": 0, "fullscreen": 0}]
+        app.later.pop()[1]()
+        self.assertEqual(app.living.pauses, [BOTH])
+        app.hypr.fail = OSError("busy")                        # and what needs no asking is not held up by it
+        self.assertEqual(app.command("ambient off"), "ambient off")
+        self.assertEqual(app.living.pauses[-1], ALL)
+
+    def test_the_sync_after_a_refresh(self):
+        app = living_app()
+        game = {"class": "gamescope", "workspace": {"id": 3}, "monitor": 0, "fullscreen": 0}
+        app.hypr.asked.clear()
+        app._ambient_sync((app.hypr.state["monitors"], [game]))                # what the refresh already asked for
+        self.assertEqual((app.living.pauses[-1], app.hypr.asked), (BOTH, []))
+        app.refresh = lambda: 1 / 0                            # a refresh that fails: the sync still runs, and asks for itself
+        app.refresh_id = 3
+        app.hypr.state["clients"] = []
+        with contextlib.redirect_stderr(io.StringIO()):
+            app._run_refresh()
+        self.assertEqual(app.living.pauses[-1], set())
+
+    def test_everywhere_means_monitors_that_come_later_too(self):
+        host = living(self.files)
+        host.pause(set(), everything=True)
+        host.show("DP-1", MON, "/pics/a.jpg")
+        self.assertTrue(host.screens["DP-1"].layer.paused)
+        host.pause(set())
+        self.assertFalse(host.screens["DP-1"].layer.paused)
+
+
+# ---------------------------------------------------------------- the status wall
+WALL_CTX = {"clock": "22:44", "second": 37.0, "date": "TUE 13 OCT 2026", "uptime": "04:12", "berserk": False,
+            "magi": [{"value": 0.07, "label": "07%", "series": [0.07 + 0.3 * abs(math.sin(i / 7)) for i in range(61)]},
+                     {"value": 0.52, "label": "9.8G", "series": [0.5 + 0.02 * math.sin(i / 9) for i in range(61)]},
+                     {"value": 0.30, "label": "↓340K", "series": [abs(math.sin(i / 3)) ** 3 for i in range(61)]}],
+            "net": "lan", "workspaces": [(n, "active" if n == 2 else "occupied" if n in (1, 3, 7) else "empty") for n in range(1, 11)],
+            "music": {"status": "Playing", "title": "Walking on a Dream", "artist": "Empire of the Sun"}}
+
+
+class WallKit(unittest.TestCase):
+    frame = KitTest.frame
+
+    def test_a_screen_is_a_bezel_a_face_and_a_tag(self):
+        from eva_desk import draw as d
+        got = []
+        f = self.frame(lambda k: got.append(k.screen(100, 100, 400, 200, "MAGI-1", "CPU")))
+        self.assertEqual(got, [(113, 128, 374, 162)])          # the box left for the content
+        deep = tuple(round(c * 255) for c in d.col("ink_deep")[:3])[::-1]
+        bezel = tuple(round(c * 255) for c in d.col("ink3")[:3])[::-1]
+        self.assertTrue(near(px(f, 103, 200), bezel, tol=2) and near(px(f, 300, 290), deep, tol=14))       # the face, under its scanlines
+        self.assertEqual((alpha(f, 98, 200), alpha(f, 300, 302), pink(f)), (0, 0, 0))
+        self.assertTrue(any(max(px(f, x, y)[:3]) > 120 for x in range(113, 260) for y in range(108, 124)))  # the tag is set
+
+    def test_a_sparkline(self):
+        from eva_desk import draw as d
+        from eva_desk.motion import Piece, render
+
+        class P(Piece):
+            length = 1.0
+
+            def paint(self, kit, t, ctx):
+                kit.spark(100, 100, 300, 100, ctx["values"], d.GOLD)
+        f = render.frame(P(), 0.0, 1720, 720, {"values": [1.0] * 30 + [0.0] * 31})         # newest first: high on the right, low on the left
+        self.assertGreater(alpha(f, 390, 102), 150)            # the line runs along the top at the right
+        self.assertGreater(alpha(f, 390, 150), 15)             # and is filled faintly under it
+        self.assertLess(alpha(f, 390, 150), 80)
+        self.assertEqual(alpha(f, 110, 150), 0)                # nothing under a reading of nothing,
+        self.assertGreater(alpha(f, 110, 197), 150)            # whose line lies on the floor
+        self.assertEqual((alpha(f, 95, 150), alpha(f, 405, 150), alpha(f, 250, 95), alpha(f, 250, 205)), (0, 0, 0, 0))
+        self.assertEqual(texture_widths(render.build(P(), 0.0, 1720, 720, {"values": [0.5] * 61})), [])
+        for values in ([], [0.5], [2.0, -1.0, "x", None] * 5):
+            self.assertEqual(pink(render.frame(P(), 0.0, 1720, 720, {"values": values})), 0)
+
+
+    def test_what_is_still_is_kept_as_one_node(self):
+        from eva_desk import draw as d, gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        from eva_desk.motion.kit import Kit
+        store, drawn = {}, []
+
+        def build(key, dx=0.0, draw=None):
+            snap = Gtk.Snapshot()
+            kit = Kit(snap, 1720, 720, 1.0, store)
+            with kit.transform(dx):
+                kit.keep("slab", key, draw or (lambda: (drawn.append(key), kit.rect(100, 100, 50, 50, d.BONE))))
+            kit.close()
+            return snap.to_node()
+
+        def painted(node, x, y):
+            import cairo
+            surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 400, 300)
+            if node is not None:
+                node.draw(cairo.Context(surf))
+            surf.flush()
+            return alpha(surf, x, y)
+        first = build(("a",))
+        self.assertEqual((painted(first, 120, 120), painted(first, 220, 120)), (255, 0))
+        build(("a",))
+        moved = build(("a",), dx=100.0)                        # the same node, wherever it is put
+        self.assertEqual((drawn, painted(moved, 120, 120), painted(moved, 220, 120)), ([("a",)], 0, 255))
+        build(("b",))                                          # what it shows changed: drawn again, once
+        build(("b",))
+        self.assertEqual(drawn, [("a",), ("b",)])
+        self.assertEqual(len(store), 1)                        # one place for it, whatever it has shown
+        self.assertIsNone(build(("c",), draw=lambda: None))    # nothing drawn is nothing kept, and no error
+
+
+class WallTest(unittest.TestCase):
+    def setUp(self):
+        from eva_desk.motion import render
+        from eva_desk.motion.amb import wall
+        self.W, self.render = wall, render
+
+    def test_only_what_moves_is_built_again(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        from eva_desk.motion.kit import Kit
+        loop, store, counts = self.W.WallLoop(), {}, []
+        for t in (1.0, 1.05, 1.1):
+            snap = Gtk.Snapshot()
+            kit = Kit(snap, 1080, 1920, 1.0, store)
+            calls = []
+            kit.text = (lambda real: lambda *a, **kw: (calls.append(a[0]), real(*a, **kw))[1])(kit.text)
+            loop.paint(kit, t, WALL_CTX)
+            kit.close()
+            counts.append(len(calls))
+        self.assertGreater(counts[0], 20)                      # the first frame sets all the type
+        self.assertEqual(counts[1:], [0, 0])                   # the next ones set none: it is kept
+
+    def frame(self, t=3.0, w=1080, h=1920, **more):
+        return self.render.frame(self.W.WallLoop(), t, w, h, {**WALL_CTX, **more})
+
+    def test_a_minute_of_readings_read_back_at_any_moment(self):
+        H = self.W.History
+        h = H()
+        self.assertEqual((h.at(5.0), h.series(5.0)), (0.0, [0.0] * 61))        # nothing yet: a flat line
+        for second in range(100):
+            h.push(float(second), second / 100)
+        self.assertAlmostEqual(h.at(50.0), 0.50)
+        self.assertAlmostEqual(h.at(50.25), 0.5025)            # between two samples: on the line between them
+        self.assertEqual((h.at(200.0), h.at(99.0)), (0.99, 0.99))             # past the newest: held
+        self.assertAlmostEqual(h.at(0.0), h.at(-50.0))         # before the oldest it still has: held too
+        self.assertLessEqual(len(h.samples), 70)               # it keeps a minute, not everything
+        series = h.series(99.0)
+        self.assertEqual(len(series), 61)
+        self.assertAlmostEqual(series[0], 0.99)                # newest first
+        self.assertAlmostEqual(series[10], 0.89)
+        a, b = h.series(98.0), h.series(98.1)
+        self.assertTrue(all(0 < y - x < 0.002 for x, y in zip(a[:50], b[:50])))                  # it slides, it does not step
+        h.push(100.0, "x")                                     # a reading that is not a number counts as none
+        self.assertEqual(h.at(100.0), 0.0)
+
+    def test_where_the_screens_go(self):
+        W = self.W
+        scale, columns = W.layout(1280, 1920 / 0.84375)        # the upright monitor: one column, the mock-up's own shape
+        self.assertAlmostEqual(scale, 1280 / 540)
+        self.assertEqual([[name for name, _ in col] for col in columns], [["time", "magi", "harmonics", "workspaces", "audio"]])
+        for W_, H_, n in ((1720, 720, 2), (1280, 720, 2), (1600, 1200, 2), (2400, 720, 3)):          # as many columns as make the screens largest
+            scale, columns = W.layout(W_, H_)
+            self.assertEqual(len(columns), n, (W_, H_))
+            self.assertEqual(sorted(name for col in columns for name, _ in col), ["audio", "harmonics", "magi", "time", "workspaces"])
+            self.assertLessEqual(len(columns) * 540 * scale, W_ + 0.01)
+            self.assertLessEqual(max(sum(h for _, h in col) for col in columns) * scale + 82 * scale, H_ + 0.01)       # with its header and both strips
+
+    def test_it_paints_the_wall(self):
+        f = self.frame()
+        self.assertEqual(pink(f), 0)
+        self.assertTrue(all(120 <= a <= 255 for a in grid(f)))                 # ink at 62 % everywhere, whole where a screen is
+        self.assertAlmostEqual(alpha(f, 4, 960), 158, delta=3)                 # the margin: the wallpaper shows through
+        self.assertEqual(alpha(f, 540, 400), 255)                              # the TIME screen
+        self.assertTrue(same(f, self.frame()))
+        self.assertFalse(same(f, self.frame(t=3.5)))                           # the hazard strips crawl, the waves move
+        node = self.render.build(self.W.WallLoop(), 3.0, 1080, 1920, WALL_CTX)
+        self.assertIn(round(128 * 0.75 * 2, 2), glyph_sizes(node))             # the clock at 128, twice the mock-up's size on this monitor
+
+    def test_what_it_shows_follows_its_inputs(self):
+        base = self.frame()
+        for more in ({"clock": "09:05"}, {"second": 5.0}, {"uptime": "1D 02:00"}, {"berserk": True}, {"music": None},
+                     {"music": {"status": "Paused", "title": "Walking on a Dream", "artist": "Empire of the Sun"}},
+                     {"workspaces": [(n, "empty") for n in range(1, 11)]},
+                     {"magi": [dict(m, value=0.95) for m in WALL_CTX["magi"]]}):
+            self.assertFalse(same(base, self.frame(**more)), more)
+
+    def test_every_size_and_odd_inputs(self):
+        for w, h in ((1080, 1920), (3440, 1440), (1920, 1080), (1600, 1200)):
+            f = self.frame(w=w, h=h)
+            self.assertEqual(pink(f), 0, (w, h))
+            self.assertTrue(same(f, self.frame(w=w, h=h)), (w, h))
+        loop = self.W.WallLoop()
+        for ctx in ({}, {"magi": []}, {"magi": [{}, {"value": "x", "series": None}, {"value": 7, "label": "L" * 90, "series": [9] * 3}]},
+                    {"workspaces": [("x", None)] * 30}, {"music": {"title": "T" * 400, "artist": "مرحبا"}}, {"music": {}},
+                    {"second": 99, "clock": None, "date": None, "uptime": None}):
+            self.assertEqual(pink(self.render.frame(loop, 3.0, 1080, 1920, ctx)), 0, ctx)
+        t = 7 * 86400 + 3.0
+        self.assertEqual(pink(self.frame(t=t)), 0)
+
+    def test_nothing_is_made_per_frame_and_the_type_keeps_its_size(self):
+        from eva_desk import gtkutil  # noqa: F401
+        from gi.repository import Gtk
+        from eva_desk.motion.kit import Kit
+        loop, store, sizes, glyphs = self.W.WallLoop(), {}, [], set()
+        for t in (1.0, 2.0, 7.5, 13.0):
+            kit = Kit(Gtk.Snapshot(), 1080, 1920, 1.0, store)
+            loop.paint(kit, t, WALL_CTX)
+            kit.close()
+            sizes.append(len(store))
+            glyphs |= glyph_sizes(self.render.build(loop, t, 1080, 1920, WALL_CTX))
+        self.assertEqual(len(set(sizes)), 1, sizes)
+        self.assertLessEqual(len(glyphs), 14, sorted(glyphs))
+        self.assertEqual(texture_widths(self.render.build(loop, 3.0, 1080, 1920, WALL_CTX)), [])           # all of it is rectangles and type
+
+    def test_the_registry_and_the_renderer(self):
+        from eva_desk import motion
+        self.assertEqual(list(motion.loops()), ["standby", "wallpaper", "wall"])
+        loop = motion.loops()["wall"]()
+        self.assertEqual((loop.name, loop.length, loop.covers), ("wall", None, False))
+        f = self.render.frame(loop, 3.0, 1080, 1920, self.render.fixture_ctx())
+        self.assertEqual(alpha(f, 540, 400), 255)
+
+
+class WallRules(unittest.TestCase):
+    def test_which_monitor_and_when(self):
+        from eva_desk.motion import triggers as T
+        mons = [{"id": 0, "name": "DP-1", "description": "Big Co ULTRAWIDE", "activeWorkspace": {"id": 1}},
+                {"id": 1, "name": "DP-2", "description": "Small Co UPRIGHT 24", "activeWorkspace": {"id": 5}},
+                {"id": 2, "name": "HDMI-A-1", "description": "Tele Vision", "activeWorkspace": {"id": 8}}]
+        self.assertEqual(T.wall_monitor(mons, ["DP-1"], ""), "DP-2")           # the first that is not a main one
+        self.assertEqual(T.wall_monitor(mons, ["DP-1"], "HDMI-A-1"), "HDMI-A-1")
+        self.assertEqual(T.wall_monitor(mons, ["DP-1"], "Tele"), "HDMI-A-1")   # part of its description
+        self.assertEqual(T.wall_monitor(mons, ["DP-1"], "DP-1"), None)         # never on a main monitor
+        self.assertEqual(T.wall_monitor(mons, ["DP-1"], "nothing like it"), None)
+        self.assertEqual(T.wall_monitor(mons, ["DP-1", "DP-2", "HDMI-A-1"], ""), None)
+        self.assertEqual(T.wall_monitor(mons + [{"name": "DP-9", "disabled": True}], ["DP-1", "DP-2", "HDMI-A-1"], ""), None)
+        self.assertEqual(T.wall_monitor(None, [], ""), None)
+        term = {"class": "kitty", "workspace": {"id": 5}, "mapped": True}
+        self.assertTrue(T.workspace_empty(mons[1], []))
+        self.assertTrue(T.workspace_empty(mons[1], [{"class": "kitty", "workspace": {"id": 1}}]))          # a window somewhere else
+        self.assertFalse(T.workspace_empty(mons[1], [term]))
+        self.assertTrue(T.workspace_empty(mons[1], [dict(term, mapped=False)]))
+        self.assertTrue(T.workspace_empty(mons[1], [dict(term, hidden=True)]))
+        special = dict(mons[1], specialWorkspace={"id": -98, "name": "special:pad"})
+        self.assertFalse(T.workspace_empty(special, [{"class": "kitty", "workspace": {"id": -98}}]))       # an open scratchpad counts
+        self.assertTrue(T.workspace_empty(None, [term]) is False)
+
+
+class FakeSampler:
+    def __init__(self):
+        self.next, self.calls = {"cpu": 7, "mem_used": 9.8 * 2 ** 30, "mem_total": 32 * 2 ** 30, "net": {"kind": "lan", "down": 340 * 1024}}, 0
+
+    def sample(self, now=None):
+        self.calls += 1
+        if isinstance(self.next, Exception):
+            raise self.next
+        return self.next
+
+
+def sidewall(**ambient_cfg):
+    """A SideWall whose layer is ambient(), whose clock is its `now`, and whose timers are a list."""
+    from eva_desk.motion.sidewall import SideWall
+    cfg = config.load("/nonexistent")
+    cfg["ambient"].update(ambient_cfg)
+    wall = SideWall(object(), cfg, make=lambda app: ambient(keyboard="none"), clock=lambda: wall.now, sampler=FakeSampler(),
+                    state=lambda: {"workspaces": [(1, "active")], "music": None})
+    wall.now, wall.timers, wall.cancelled = 0.0, [], []
+    wall._every = lambda ms, fn: wall.timers.append((ms, fn)) or len(wall.timers)
+    wall._cancel = wall.cancelled.append
+    wall.read_uptime = lambda: 4 * 3600 + 12 * 60 + 5.0
+    return wall
+
+
+class SideWallTest(NoCompositor):
+    def test_it_is_up_while_it_is_given_a_monitor(self):
+        wall = sidewall()
+        self.assertFalse(wall.up)
+        wall.sync("DP-2", MON2)
+        self.assertTrue(wall.up and wall.layer.win.visible and wall.layer.win.surface.region.is_empty())
+        self.assertEqual((wall.layer.piece.name, [ms for ms, _ in wall.timers], wall.sampler.calls), ("wall", [1000], 1))        # a reading at once, then one a second
+        wall.sync("DP-2", MON2)                                # the same again: nothing
+        self.assertEqual((len(wall.timers), len(wall.layer.timers)), (1, 1))
+        wall.sync("DP-2", None)                                # a window opened there
+        self.assertFalse(wall.up or wall.layer.win.visible)
+        self.assertEqual(wall.cancelled, [1])                  # no reading while nobody sees it
+        wall.sync("DP-2", MON2)
+        again = FakeMonitor(1080, 1920)
+        wall.sync("HDMI-A-1", again)                           # it moved to another monitor
+        self.assertTrue(wall.up and wall.name == "HDMI-A-1")
+        wall.stop()
+        self.assertFalse(wall.up)
+
+    def test_what_it_shows(self):
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        for second in range(1, 6):
+            wall.now = float(second)
+            wall.sampler.next = {"cpu": 10 * second, "mem_used": 16 * 2 ** 30, "mem_total": 32 * 2 ** 30, "net": {"kind": "wifi", "down": 2 ** 20 * second}}
+            wall.sample()
+        wall.now = 5.5
+        ctx = wall.layer.inputs()
+        self.assertEqual(sorted(ctx), ["berserk", "clock", "date", "magi", "music", "net", "second", "uptime", "workspaces"])
+        self.assertEqual((ctx["uptime"], ctx["net"], ctx["workspaces"], ctx["music"], ctx["berserk"]), ("04:12", "wifi", [(1, "active")], None, False))
+        cpu, mem, net = ctx["magi"]
+        self.assertEqual((cpu["label"], mem["label"], net["label"]), ("50%", "16G", "↓5.0M"))               # the labels are the newest reading
+        self.assertAlmostEqual(cpu["value"], 0.44)             # the curves run a second behind (in steps of a fifth), between two readings
+        self.assertAlmostEqual(cpu["series"][1], 0.34)
+        self.assertAlmostEqual(mem["value"], 0.5)
+        self.assertAlmostEqual(net["value"], 4.4 / 5)          # against the most it has seen
+        self.assertEqual(len(net["series"]), 61)
+        self.assertTrue(all(0 <= v <= 1 for m in ctx["magi"] for v in m["series"]))
+
+    def test_a_trickle_is_not_drawn_as_a_flood(self):
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        wall.now = 3.0
+        self.assertLess(wall.layer.inputs()["magi"][2]["value"], 0.4)          # 340 K a second against a megabyte at least
+
+    def test_it_is_taken_down_while_the_loops_stand_still(self):
+        wall = sidewall()                                      # a clock that has stopped still reads as the time: no wall is better
+        wall.sync("DP-2", MON2)
+        wall.pause({"DP-1"})
+        self.assertTrue(wall.up)
+        wall.pause({"DP-1", "DP-2"})
+        self.assertFalse(wall.up or wall.layer.win.visible)
+        self.assertEqual(wall.cancelled, [1])                  # and no reading
+        wall.sync("DP-2", MON2)                                # the desk says it belongs there: not while it stands still
+        self.assertFalse(wall.up)
+        wall.pause(set())
+        self.assertTrue(wall.up and wall.layer.win.visible)
+        self.assertEqual([ms for ms, _ in wall.timers][-1], 1000)
+        wall.pause(set(), everything=True)
+        self.assertFalse(wall.up)
+        wall.sync("DP-2", None)                                # a window opened there meanwhile
+        wall.pause(set())
+        self.assertFalse(wall.up)
+        wall.set_berserk(True)
+        self.assertTrue(wall.inputs()["berserk"])
+
+    def test_a_monitor_that_came_back_gets_a_new_layer(self):
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        first = wall.layer
+        wall.sync("DP-2", None)
+        wall.sync("DP-2", MON2)                                # a window came and went: the same monitor, the same layer
+        self.assertIs(wall.layer, first)
+        wall.sync("DP-2", None)
+        back = FakeMonitor(1080, 1920)
+        wall.sync("DP-2", back)                                # the monitor was off and on: its window went with it
+        self.assertTrue(wall.layer is not first and first.win.destroyed and wall.up)
+
+    def test_a_layer_that_breaks_stops_the_reading(self):
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        wall.layer._fail()
+        self.assertEqual((wall.up, wall.cancelled), (False, [1]))
+        wall.sync("DP-2", MON2)                                # and the next refresh puts it up again
+        self.assertTrue(wall.up)
+
+    def test_after_a_gap_the_minute_starts_again(self):
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        for second in (1.0, 2.0, 3.0):
+            wall.now = second
+            wall.sample()
+        self.assertEqual(len(wall.cpu.samples), 4)
+        wall.now = 300.0                                       # it was down for five minutes
+        wall.sample()
+        self.assertEqual([len(h.samples) for h in (wall.cpu, wall.mem, wall.net)], [1, 1, 1])      # no ramp drawn across the gap
+
+    def test_a_sampler_that_fails(self):
+        wall = sidewall()
+        wall.sampler.next = OSError("no /proc")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            wall.sync("DP-2", MON2)
+            wall.sample()
+        self.assertEqual(len(out.getvalue().splitlines()), 1)                  # said once
+        self.assertEqual(wall.layer.inputs()["magi"][0]["label"], "--")
+        self.assertTrue(wall.up)
+
+    def test_it_runs_slower_than_the_other_loops_and_its_curves_step_five_times_a_second(self):
+        self.assertEqual((sidewall(fps=60).fps, sidewall(fps=30).fps, sidewall(fps=10).fps), (15, 15, 10))
+        wall = sidewall()
+        wall.sync("DP-2", MON2)
+        for second in range(1, 4):
+            wall.now = float(second)
+            wall.sampler.next = {"cpu": 10 * second, "mem_used": 16 * 2 ** 30, "mem_total": 32 * 2 ** 30, "net": {"kind": "lan", "down": 0}}
+            wall.sample()
+        wall.now = 3.41
+        a = wall.inputs()["magi"][0]["series"]
+        wall.now = 3.59
+        self.assertEqual(a, wall.inputs()["magi"][0]["series"])                # the same fifth of a second: the same curve, so it is kept
+        wall.now = 3.61
+        self.assertNotEqual(a, wall.inputs()["magi"][0]["series"])
+
+    def test_uptime(self):
+        from eva_desk.motion.sidewall import uptime_text
+        self.assertEqual([uptime_text(s) for s in (0, 59, 3600 * 4 + 12 * 60, 86400 * 3 + 3600 * 2 + 60, None, "x")],
+                         ["00:00", "00:00", "04:12", "3D 02:01", "", ""])
+
+
+class WallWiring(unittest.TestCase):
+    def setUp(self):
+        self.monitors = {"DP-1": "GDK-1", "DP-2": "GDK-2"}
+        patch = mock.patch("eva_desk.gtkutil.monitors", lambda: dict(self.monitors))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def app(self):
+        app = living_app()
+        app.wall = types.SimpleNamespace(syncs=[], pauses=[], hot=[])
+        app.wall.sync = lambda name, gdk: app.wall.syncs.append((name, gdk))
+        app.wall.pause = lambda names, everything=False: app.wall.pauses.append(ALL if everything else set(names))
+        app.wall.set_berserk = app.wall.hot.append
+        return app
+
+    def test_the_defaults(self):
+        amb = config.load("/nonexistent")["ambient"]
+        self.assertEqual((amb["wall"], amb["wall_monitor"]), (True, ""))
+        self.assertIn("\nwall = true", (ROOT / "config" / "eva.example.toml").read_text())
+
+    def test_it_goes_on_the_other_monitor_while_that_is_empty(self):
+        app = self.app()
+        mons, mains = app.hypr.state["monitors"], [app.hypr.state["monitors"][0]]
+        wss = [{"id": 1, "windows": 2}, {"id": 5, "windows": 0}, {"id": 7, "windows": 1}]
+        app._wall_sync(mons, [], wss, mains)
+        self.assertEqual(app.wall.syncs, [("DP-2", "GDK-2")])
+        self.assertEqual(app._wall_state()["workspaces"][:2], [(1, "active"), (2, "empty")])
+        self.assertEqual(app._wall_state()["workspaces"][6], (7, "occupied"))
+        self.assertEqual(len(app._wall_state()["workspaces"]), 10)
+        app._wall_sync(mons, [{"class": "kitty", "workspace": {"id": 5}}], wss, mains)
+        self.assertEqual(app.wall.syncs[-1], ("DP-2", None))   # a window is there now
+        app.cfg["ambient"]["wall_monitor"] = "nothing like it"
+        app._wall_sync(mons, [], wss, mains)
+        self.assertEqual(app.wall.syncs[-1], (None, None))
+        app.cfg["ambient"]["wall_monitor"] = ""
+        self.monitors.pop("DP-2")                              # Hyprland knows it, GTK not yet
+        app._wall_sync(mons, [], wss, mains)
+        self.assertEqual(app.wall.syncs[-1], ("DP-2", None))
+        app.wall = None
+        app._wall_sync(mons, [], wss, mains)
+
+    def test_what_it_is_told(self):
+        app = self.app()
+        app.music_state = {"status": "Playing", "title": "T", "artist": "A"}
+        self.assertEqual(app._wall_state(), {"workspaces": [], "music": app.music_state})
+        app._ambient_sync()
+        self.assertEqual((app.wall.pauses, app.living.pauses), ([set()], [set()]))
+        app.command("ambient off")
+        self.assertEqual(app.wall.pauses[-1], ALL)
+        app.cfg["overlays"].update(berserk=90, berserk_seconds=0)
+        app._berserk_check(99, 10)
+        self.assertEqual(app.wall.hot, [True])
+        app.living = app.standby = None                        # the wall alone still has the lock watched
+        self.assertTrue(app._has_loops())

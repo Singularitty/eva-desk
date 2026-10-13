@@ -124,6 +124,27 @@ berserk = true            # when CPU or memory stays at or over the limit ([over
 track = true              # a card in a corner when a new track starts playing (playerctl; the players of [bar] music_players)
 track_corner = "bottom-left"   # or "bottom-right"
 
+[standby]                 # after some minutes without input every monitor is covered by a slow loop: Unit-01 in the dark,
+                          # a field of hexagons, the clock. Any key, a click or moving the mouse folds it away. It never
+                          # starts over a fullscreen window, while a game is open, or on a locked session
+enabled = true
+minutes = 5               # 0 = only when you run `eva-ctl standby`
+idle = "hypridle"         # the daemon runs hypridle to count the minutes (it honours idle inhibitors: a video keeps
+                          # standby away); "none" = your own idle tool calls `eva-ctl standby on`
+
+[ambient]                 # the loops: what moves while nothing happens. They stand still while a game is open, on a
+                          # monitor that shows a fullscreen window, on a locked session, and after `eva-ctl ambient off`
+fps = 30                  # how often they repaint, a second; lower it if they cost too much
+wallpaper = true          # main monitors: the daemon draws the workspace's wallpaper itself (not awww) and moves it.
+                          # A wallpaper that is a colour stays a plain fill
+drift = 8                 # how far the picture pushes in, percent; 0 = a still picture
+lap = 30                  # seconds for one push-in and back
+ripples = true            # a ring of hexagons spreading over the picture every few seconds
+embers = true             # small specks rising
+wall = true               # a status wall on a monitor that is not a main one, while its workspace holds no window:
+                          # the clock, CPU, memory and network with a minute of history, the workspaces, the playing track
+wall_monitor = ""         # its connector ("DP-2") or part of its description; empty = the first monitor that is not a main one
+
 [hyprland]
 maximize_bind = ["SUPER + RETURN"]   # fill the screen under the bar (one key or a list)
 launcher_bind = "SUPER + Space"   # this key opens the eva-desk launcher ("" = leave it alone)

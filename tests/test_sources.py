@@ -303,5 +303,164 @@ class AudioStateScript(unittest.TestCase):
                 _kill_leftovers(pidfile)
 
 
+IDLE_CONF = """# written by eva-desk from [standby] in eva.toml; changes here are lost
+general {
+    ignore_dbus_inhibit = false
+}
+
+listener {
+    timeout = 300
+    on-timeout = /usr/bin/eva-ctl standby on
+}
+"""
+
+
+class FakeChild:
+    """What Popen gives back, as far as Idle uses it."""
+    pid = 4242
+
+    def __init__(self):
+        self.code, self.terminated, self.killed, self.stubborn, self.waits = None, 0, 0, False, 0
+
+    def poll(self):
+        return self.code
+
+    def terminate(self):
+        self.terminated += 1
+
+    def wait(self, timeout=None):
+        self.waits += 1
+        if self.stubborn and not self.killed:
+            raise subprocess.TimeoutExpired("hypridle", timeout)
+        self.code = 0
+
+    def kill(self):
+        self.killed += 1
+
+
+class IdleTest(unittest.TestCase):
+    """The hypridle child. Nothing is spawned and no signal is sent: both are fakes."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder, self.procfs = Path(tmp.name) / "state", Path(tmp.name) / "proc"
+        self.procfs.mkdir()
+        self.spawned, self.killed, self.proc, self.naps = [], [], None, []
+
+    def spawn(self, argv, **kw):
+        self.spawned.append(list(argv))
+        self.proc = FakeChild()
+        return self.proc
+
+    def refuses(self, argv, **kw):
+        raise OSError("no such file")
+
+    def idle(self, which=lambda name: "/usr/bin/hypridle", spawn=None, minutes=5, ctl="/usr/bin/eva-ctl"):
+        from eva_desk.sources import idle
+        return idle.Idle(minutes, ctl, self.folder, spawn=spawn or self.spawn, which=which,
+                         kill=lambda pid, sig: self.killed.append((pid, sig)), proc=str(self.procfs), sleep=self.naps.append)
+
+    def fake_process(self, pid, cmdline):
+        (self.procfs / str(pid)).mkdir()
+        (self.procfs / str(pid) / "cmdline").write_bytes(cmdline.encode())
+
+    def test_the_config(self):
+        from eva_desk.sources import idle
+        self.assertEqual(idle.conf(5, "/usr/bin/eva-ctl"), IDLE_CONF)
+        self.assertIn("timeout = 30\n", idle.conf(0.5, "/usr/bin/eva-ctl"))
+        self.assertIn("timeout = 1\n", idle.conf(0.001, "/usr/bin/eva-ctl"))
+        self.assertIn("on-timeout = '/home/a b/eva-ctl' standby on\n", idle.conf(5, "/home/a b/eva-ctl"))
+
+    def test_start_and_stop(self):
+        from eva_desk.sources import idle
+        i = self.idle()
+        self.assertTrue(i.start())
+        conf = self.folder / "hypridle.conf"
+        self.assertEqual(conf.read_text(), idle.conf(5, "/usr/bin/eva-ctl"))
+        self.assertEqual(self.spawned, [["hypridle", "-q", "-c", str(conf)]])
+        self.assertEqual((self.folder / "hypridle.pid").read_text().strip(), "4242")
+        i.stop()
+        self.assertEqual((self.proc.terminated, (self.folder / "hypridle.pid").exists()), (1, False))
+        i.stop()
+        self.assertEqual(self.proc.terminated, 1)
+
+    def test_one_that_will_not_die_is_killed(self):
+        i = self.idle()
+        i.start()
+        self.proc.stubborn = True
+        i.stop()
+        self.assertEqual((self.proc.terminated, self.proc.killed, self.proc.waits), (1, 1, 2))     # and it is waited for again, so none is left a zombie
+
+    def test_one_that_has_gone_is_not_signalled(self):
+        i = self.idle()
+        i.start()
+        self.proc.code = 1
+        i.stop()
+        self.assertEqual((self.proc.terminated, (self.folder / "hypridle.pid").exists()), (0, False))
+
+    def test_no_hypridle(self):
+        i = self.idle(which=lambda name: None)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(i.start())
+            self.assertFalse(i.start())
+        self.assertEqual((self.spawned, len(out.getvalue().splitlines())), ([], 1))
+        self.assertIn("hypridle", out.getvalue())
+        i.stop()
+        self.assertFalse(i.gone())
+
+    def test_one_that_cannot_be_started(self):
+        i = self.idle(spawn=self.refuses)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(i.start())
+        self.assertIn("hypridle", out.getvalue())
+        self.assertFalse((self.folder / "hypridle.pid").exists())
+
+    def test_a_stale_child_is_ended_by_its_pid_and_only_if_it_is_ours(self):
+        self.folder.mkdir()
+        conf = self.folder / "hypridle.conf"
+        self.fake_process(777, f"hypridle\0-q\0-c\0{conf}\0")
+        (self.folder / "hypridle.pid").write_text("777\n")
+        self.idle().start()
+        self.assertEqual(self.killed, [(777, signal.SIGTERM)])
+        self.killed.clear()
+        self.fake_process(888, "firefox\0")                    # the pid was given to something else since
+        (self.folder / "hypridle.pid").write_text("888\n")
+        self.idle().start()
+        (self.folder / "hypridle.pid").write_text("not a number\n")
+        self.idle().start()
+        (self.folder / "hypridle.pid").write_text("999\n")     # nothing has that pid
+        self.idle().start()
+        (self.folder / "hypridle.pid").write_text("-1\n")      # and a pid that would mean "everyone" is never used
+        self.idle().start()
+        self.assertEqual(self.killed, [])
+
+    def test_only_hypridle_on_our_config_is_ours(self):
+        from eva_desk.sources import idle
+        self.folder.mkdir()
+        conf = self.folder / "hypridle.conf"
+        for pid, argv, ours in ((801, f"nvim\0{conf}\0", False),                           # somebody reading the config
+                                (802, f"hypridle\0-c\0/elsewhere/hypridle.conf\0", False),      # somebody's own hypridle
+                                (803, f"hypridle\0{conf}\0", False),                       # not given as its config
+                                (804, f"/usr/bin/hypridle\0-c\0{conf}\0", True),
+                                (805, f"hypridle\0-q\0-c\0{conf}\0", True)):
+            self.fake_process(pid, argv)
+            (self.folder / "hypridle.pid").write_text(f"{pid}\n")
+            self.killed.clear()
+            idle.end_stale(self.folder, kill=lambda p, sig: self.killed.append(p), proc=str(self.procfs), sleep=self.naps.append)
+            self.assertEqual(self.killed, [pid] if ours else [], argv)
+            self.assertFalse((self.folder / "hypridle.pid").exists())
+        self.assertEqual((len(self.naps), max(self.naps)), (40, 0.05))                     # it waits for each to go, a second at most
+        idle.end_stale(self.folder / "nowhere", kill=lambda p, sig: 1 / 0, proc=str(self.procfs))          # no folder: nothing to do
+
+    def test_it_says_once_that_the_child_went(self):
+        i = self.idle()
+        self.assertFalse(i.gone())
+        i.start()
+        self.assertFalse(i.gone())
+        self.proc.code = 1
+        self.assertEqual((i.gone(), i.gone()), (True, False))
+
+
 if __name__ == "__main__":
     unittest.main()

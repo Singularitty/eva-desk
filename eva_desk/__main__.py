@@ -91,14 +91,14 @@ def main():
         render_all(cfg, a.render)
         return
     if a.render_motion:
-        from .motion import pieces, render
+        from .motion import everything, render
         try:
             size = render.parse_size(a.size)
         except ValueError as e:
             print(f"eva-desk: {e}")
             sys.exit(2)
-        if a.only is not None and a.only not in pieces():
-            print(f"eva-desk: no motion piece named {a.only} ({', '.join(pieces())})")
+        if a.only is not None and a.only not in everything():
+            print(f"eva-desk: no motion piece named {a.only} ({', '.join(everything())})")
             sys.exit(2)
         render.render_motion(a.render_motion, a.only, size, a.fps)
         return

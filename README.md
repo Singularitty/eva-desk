@@ -83,6 +83,35 @@ and while the launcher, the power menu or Alt+Tab is up. Each has a switch under
 `berserk`, `track`), and `track_corner` picks the card's corner. The track card needs `playerctl` and follows
 the players named in `[bar] music_players`; it shows at most once in ten seconds.
 
+**Standby.** After five minutes without input every monitor is covered by a slow loop: Unit-01 in the dark in
+three pictures, a field of hexagons, and the clock, with a cut every fifteen seconds. Any key, a click or
+moving the mouse folds it away, and that key or click is not passed on to the window underneath. It does not
+start over a fullscreen window, while a game is open or on a locked session, and it goes when the session
+locks, the machine sleeps or a critical notification arrives. The daemon runs `hypridle` to count the minutes,
+so anything that holds an idle inhibitor (a video, a call) keeps standby away; without `hypridle`, or with
+`idle = "none"` under `[standby]`, it starts only when something runs `eva-ctl standby on`, which is also how
+you try it. Standby keeps the screens lit: turning them off is still your idle tool's job. `minutes` sets the
+wait and `enabled = false` turns it off. A theme can bring its own pictures in
+`assets/themes/<name>/motion/`: the same seven files as `assets/motion/`, made with `tools/gen/prep_art.py`.
+
+**Living wallpaper.** On the main monitors the daemon draws the workspace's wallpaper itself and moves it: the
+picture pushes in and back once every thirty seconds with a slow pan, a ring of hexagons spreads over it every
+few seconds, and small specks rise. A new wallpaper fades in over the old one. Under `[ambient]`, `drift` sets
+how far it pushes in (0 is a still picture), `lap` how long a push-in takes, and `ripples` and `embers` switch
+the other two; `wallpaper = false` hands the wallpaper back to `awww`. A wallpaper that is a colour stays a
+plain fill, and a picture the daemon cannot read goes to `awww` as before. Other monitors keep their `awww`
+wallpaper.
+
+**Status wall.** A monitor that is not a main one shows a wall of readouts while its workspace holds no
+window: the clock, CPU, memory and network each with a minute of history, the workspaces, and the playing
+track. Open a window there and it is gone. `wall_monitor` under `[ambient]` picks the monitor (its connector,
+or part of its description) and `wall = false` turns it off.
+
+The wallpaper repaints thirty times a second (`[ambient] fps`) and the wall fifteen. Both stop, with no timer
+running, while a game is open on any monitor, on a monitor that shows a fullscreen window, on a locked
+session, and under standby: the wallpaper keeps its last frame, and the wall is taken down, since a clock
+that has stopped still reads as the time. `eva-ctl ambient off` stops them by hand until `eva-ctl ambient on`.
+
 <p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
 
 **Alt+Tab.** Window switcher. One card per window, most recent first, with the workspace number. Release Alt to jump.
@@ -178,8 +207,9 @@ script, turn them off, or disable eva-desk's with `[bar] enabled = false` and `[
 Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
 
 Optional: `awww` or `swww` for wallpapers, `wpctl` for volume, `playerctl` for now playing, `grim` and
-`wl-copy` for screenshots, `hyprlock` for the lock screen, Pillow for rendering the lock and login backgrounds,
-`ffmpeg` for mp4 previews of the motion sequences (`eva-desk --render-motion`).
+`wl-copy` for screenshots, `hyprlock` for the lock screen, `hypridle` for standby after some idle minutes,
+Pillow for rendering the lock and login backgrounds, `ffmpeg` for mp4 previews of the motion pieces
+(`eva-desk --render-motion`).
 The sound panel reads and sets audio with `pactl` (libpulse) and `gojq`, finds app icons with `geticons`;
 its quick toggles use `dunstctl` (dunst, do-not-disturb), `wlsunset` (night light) and `powerprofilesctl`
 (power-profiles-daemon). Without `pactl` or `gojq` the panel shows NO SIGNAL; a missing toggle tool only
@@ -220,6 +250,8 @@ eva-ctl herald                 # replay the maximise backdrop
 eva-ctl eyecatch 3 PROJECTS    # try the workspace card
 eva-ctl play card FIREFOX      # try a sequence: card, shaft, boot, wake, berserk or track
 eva-ctl lock                   # start the lock screen
+eva-ctl standby [on|off]       # the standby loop, now
+eva-ctl ambient [on|off]       # stop or start the living wallpaper and the status wall
 eva-ctl alarm "text"           # try the EMERGENCY band
 eva-ctl alttab                 # the window switcher
 eva-ctl power                  # the power menu
@@ -292,7 +324,12 @@ Measured on the daemon at idle with a 3440x1440 main monitor:
 
 The daemon is a single Python process. It wakes up on Hyprland events (workspace, window, focus), on the
 readout timer, and every two seconds to ask Hyprland whether the session is locked (twice a second while it
-is). It draws nothing while the picture is still.
+is). With the living wallpaper and the status wall off it draws nothing while the picture is still.
+
+The figures above are without those two. They repaint many times a second while they are visible, which
+costs some CPU in the daemon and keeps the GPU compositing, more so with blur behind the bar or behind
+windows, since what is blurred now changes with every frame. If that is too much on your machine, lower
+`[ambient] fps`, set `drift = 0`, or turn `wallpaper` off. They stop by themselves while a game is open.
 
 ## FAQ
 

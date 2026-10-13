@@ -14,6 +14,8 @@
   eva-ctl play NAME [TEXT]      play a sequence on the focused monitor (to try it): card, shaft, boot, wake,
                                  berserk or track; TEXT is the app's name or the track's title
   eva-ctl lock                  start the lock screen ([power] lock); it also works when the daemon is not running
+  eva-ctl standby [on|off]      the standby loop on every monitor: what the idle timer calls, and a way to try it
+  eva-ctl ambient [on|off]      stop or start what moves by itself (the living wallpaper, the status wall); alone, says which
   eva-ctl alarm [TEXT]          show the EMERGENCY band (to try it)
   eva-ctl bar show|hide
   eva-ctl status | reload | quit
