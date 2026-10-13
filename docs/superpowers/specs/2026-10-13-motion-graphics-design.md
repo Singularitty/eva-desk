@@ -50,7 +50,9 @@ rejected in review as "a picture moving". `assets/launch/` is never created.
 eva_desk/motion/
   timeline.py    progress, easing, steps, repeatable noise. Pure Python, no GTK.
   kit.py         the drawing kit over a Gtk.Snapshot
-  player.py      SequencePlayer and AmbientLayer: the layer surfaces that host a piece
+  player.py      SequencePlayer, AmbientLayer and Standby: the layer surfaces that host a piece
+  living.py      the living wallpaper's host: a layer per main monitor and the pictures it is handed
+  sidewall.py    the status wall's host: its layer, and a reading a second while it is up
   render.py      the offline renderer
   triggers.py    when each piece plays, and the pause rules. Pure logic over desk state.
   seq/           card.py  shaft.py  boot.py  wake.py  berserk.py  track.py
@@ -120,8 +122,23 @@ Thin helpers over the snapshot, colours by theme role only:
   it is a picture set once and kept with the stamps; `hex_cells(...)` gives the cells of a lattice over a box.
 - `clip(rect)`, `clip_out(rect)` and `clip_out_para(...)` (holes, as masks), `opacity`, `transform`,
   `tile` (what is painted in one cell repeats over a box), `screen_blend`: scoped with `with`.
-- `cover(texture, box, zoom, anchor)`: a picture filling a box, zoomed about an anchor point.
+- `cover(texture, x, y, w, h, zoom, fx, fy)`: a picture filling a box and cut to it; what overhangs is split by
+  `(fx, fy)`. It returns where the picture lies (`cover_box`), so a point of the picture can be found on screen.
+  `sprite(texture, x, y, w, h, alpha)` is a picture stretched over a box.
+- `screen_blend(ground)`: what is painted inside is screened onto what `ground()` paints. A blend node cannot see
+  what lies under it, so the ground is painted again inside it. `soft_band(cx, half, y0, y1)`: what is painted
+  inside shows only in an upright band that fades to nothing at both sides (a mask over a gradient).
+- `ring(cx, cy, r, ...)`: a hexagon outline of any radius as six lines, for one whose size changes with every
+  frame, where `hexagon` would set a new picture each time.
+- `screen(x, y, w, h, tag, hot)` and `spark(x, y, w, h, values, colour)`: a screen of the MFD panels, and a
+  reading's history as a line over a faint fill. The status wall is drawn with them.
+- `keep(slot, key, draw)`: what `draw()` paints, kept as one node while `key` stays the same. A loop keeps its
+  still parts this way: they are not built again for every frame, and a node that is the same from one frame to
+  the next tells GTK that nothing changed there.
 - `radial(x, y, r, colour, alpha)`: a soft glow.
+
+A loop adds a third rule to the kit's two: nothing is made per frame. No picture, stamp or layout may be created
+on a frame after the first that needs it.
 
 `timeline.py` holds `seg(t, a, b)` (progress of `t` inside an interval), the easings (`cubic_out`,
 `cubic_in`, `smooth`, `back_out`, `quint_out`, `expo_in`), `stepped(u, n)`, `twos(t)` (time quantised to
@@ -149,9 +166,26 @@ over the track card), and what is outranked is dropped, not queued. A piece can 
 on its first frame with no clock and no safety timeout, until `start()`. That is how the wake sequence waits
 under a lock screen. A click ends a held piece like any other.
 
-`AmbientLayer` hosts a loop: a layer surface that repaints from a timer at `[ambient] fps`, with
-`pause()` and `resume()`. The wallpaper and the wall sit on the bottom layer (as the stage does), standby
-on the overlay layer.
+`AmbientLayer` hosts a loop: a layer surface that repaints from a timer at `[ambient] fps` and paints the
+piece at the time it is told, now less the epoch it was given. `pause()` stops the timer and leaves the last
+frame up; `resume()` goes on from that frame; `redraw()` paints again at the same moment with fresh inputs, for
+what changes while a loop stands still. `leave(now, seconds)` gives the pointer and the keyboard back at once and
+lets the piece paint its way out, then hides; the hiding never waits on a paint. A piece that raises, or whose
+inputs raise, takes its layer down and tells its owner. The layer does not own its piece: one piece may be on
+several layers, and whoever made it releases it.
+
+Standby is on the overlay layer, the wallpaper on the background layer and the wall on the bottom layer. The
+wallpaper is on the background layer, not the bottom one, because an opaque full-screen surface on the bottom
+layer would cover other programs' desktop widgets and would depend on being created before the stage; on the
+background layer it lies over awww's surface, which was mapped first.
+
+`Standby` is the standby loop on every monitor: a layer each, one clock for all of them. Its layers are the one
+place the daemon takes the keyboard for a piece, on every monitor, so that the key that ends it is not typed
+into a window. Whatever fails on one layer ends it on all.
+
+The registry keeps loops apart from sequences: `motion.pieces()` are the sequences, which is what
+`eva-ctl play` may be handed; `motion.loops()` are the pieces with no end; `motion.everything()` is what the
+renderer draws.
 
 ### The offline renderer (`render.py`)
 
@@ -302,17 +336,41 @@ together. Nearly the whole screen is black.
 - **The clock** is the real one, in mincho, with the seconds as a 60-segment bar under it and the date
   below. It moves place every shot.
 
-Any key, click, or pointer travel of more than 8 px ends it; the event is swallowed. The picture folds
+Any key press, click, or pointer travel of more than 8 px ends it; the event is swallowed. The travel is
+measured from where the pointer last rested (a second without a report), so the position a layer is told when it
+comes up under a resting pointer, and a pixel of jitter now and then, never add up to it. The picture folds
 to a line in three steps over 0.14 s and the line closes in 0.05 s. Standby never starts while any
-monitor has a fullscreen window, while a game is open, or while the locker runs. Starting the locker and a critical
-notification both end it.
+monitor has a fullscreen window, while a game is open, or on a locked session; `eva-ctl standby on` answers
+with the reason. Before it covers them it closes the launcher, the power menu, Alt+Tab and any panel: they hold
+the keyboard, and so does it.
+
+What ends it with the fold: input, `eva-ctl standby off`, a critical notification. What ends it at once: the
+session locking (`App.lock()` before it hands the command over, and the lock watch), the machine going to sleep,
+and anything that would have kept it from starting (a game or a fullscreen window appearing, a monitor coming or
+going, Hyprland not answering).
+
+On a frame taller than it is wide the wide pictures sit in a band the frame's width and 9/16 of it high, with the
+clock under the profile and over the stare; the whole figure fills the frame, so the tilt has nothing left to
+pan; and in the field 待機 moves up with the clock under it. On a frame no wider than 16:9 the field's clock is
+180 px, not 240, so that it clears 待機.
+
+The loop's inputs: `clock`, `second` (0 to 60; `seconds` is berserk's), `date`, `readings` (the three as
+strings), and `leaving` (seconds since the exit began, or none).
 
 ### Living wallpaper
 
-With `[ambient] wallpaper = true`, each main monitor gets a bottom-layer surface on which the daemon
-draws that workspace's wallpaper itself; `Wallpapers.set_for` hands it the picture instead of calling
-`awww`. A named colour is a plain fill with no motion. Pictures decode off the main loop and cross-fade
-over `[wallpapers] duration`.
+With `[ambient] wallpaper = true`, each main monitor gets a background-layer surface on which the daemon
+draws that workspace's wallpaper itself; `Wallpapers.set_for` hands it the picture (`Wallpapers.living`, a hook
+the daemon sets) instead of calling `awww`, and no longer needs `awww` to be installed for that. A named colour
+is a plain fill with no motion and no timer. Pictures decode on a thread of their own and cross-fade over
+`[wallpapers] duration`. The layer never shows through: what lies under it is `awww`'s last picture, which is not
+the desk's any more. So the first picture goes up whole, and one that follows a colour fades in over that colour.
+A decode that finishes after a newer request, or after its monitor went away, is dropped. While a layer stands
+still a new wallpaper is swapped in whole. The host keeps the current picture and, during a fade, the one before;
+nothing else.
+
+A picture that cannot be read, and a layer that breaks, give the monitor back: the layer is hidden and `awww`
+shows the wallpaper. A window goes with its monitor, so a monitor that comes back gets a new layer.
 
 - **The drift.** `zoom = 1.035 + drift · (0.5 − 0.5 · cos(2π t / lap))`, with `drift = 8 %` and
   `lap = 30 s` by default, and a pan of 1.5 % of each side on periods of 1.3 and 1.1 laps. The motion is
@@ -322,7 +380,7 @@ over `[wallpapers] duration`.
 - **Embers.** 70 specks of 1 to 3 px rising at 9 to 25 px/s, bone with about a fifth green; orange while
   berserk.
 
-Each of the three has its own switch.
+Each of the three has its own switch. `drift = 0` is a still picture: no pan either.
 
 ### Side wall
 
@@ -338,11 +396,24 @@ landscape one:
 | MAGI-1, -2, -3 | CPU, RAM and network: the value (42 px), a 16-segment bar, a minute of history as a sparkline scrolling smoothly, a lamp that turns orange above 90 % |
 | HARMONICS | two slow standing waves whose heights follow CPU and RAM |
 | WORKSPACES | the ten tags: active inverted, occupied in claret |
-| AUDIO | title, artist and progress of the playing track, or `NO SIGNAL` |
+| AUDIO | title and artist of the playing track and whether it plays or is paused, or `NO SIGNAL` |
 
-A hazard strip crawls at 6 px/s at the top and bottom. Nothing blinks. The readings come from the
-existing `resources.Sampler` at one sample a second while the wall is visible; drawing interpolates
-between the last two samples.
+A hazard strip crawls at 6 px/s at the top and bottom. Nothing blinks. The readings come from a
+`resources.Sampler` of the wall's own (it keeps counters of its own) at one sample a second while the wall is up
+and not standing still; it keeps a minute of each and draws them a second behind, so that every point of a curve
+lies between two readings.
+
+As built: the wall is laid out in units of its own, a column 540 wide, and drawn under one scale; it takes as
+many columns (one, two or three) as make the screens largest, which on a monitor standing upright is the one
+column of the mock-up. It is drawn through the kit (`screen`, `spark`), so `mfd/widgets.py` gained nothing. AUDIO
+has no progress bar: the player watch has no position, and asking a player for it every second means running a
+program every second. WORKSPACES marks the focused monitor's workspace as the active one. A workspace is empty
+when it shows no window and no scratchpad is open over it.
+
+Its cost: built whole, a frame took 4 ms. Now the screens and their type are one kept node, built again only
+when what they show changes, and only the strips, the curves and the waves are built for every frame: 0.6 ms.
+The wall runs at `[ambient] fps` or fifteen frames a second, whichever is less, and its curves move on five
+times a second.
 
 ### Pause rules and cost
 
@@ -359,9 +430,20 @@ fullscreen, visible, or on another workspace. While a game is open:
 The launch sequences are not affected: the shaft is how a game starts, and it is over before the game
 has a window.
 
-An ambient piece is also paused on a monitor that has a fullscreen window, while the locker runs,
-between `PrepareForSleep(true)` and resume, and after `eva-ctl ambient off`. Standby pauses the
-wallpaper and the wall beneath it. A paused piece keeps its last frame on screen and its timer stopped.
+An ambient piece is also paused on a monitor that has a fullscreen window, on a locked session,
+between `PrepareForSleep(true)` and resume, and after `eva-ctl ambient off` (which lasts until
+`eva-ctl ambient on` or the daemon's next start). Standby pauses the wallpaper and the wall beneath it. A
+paused piece keeps its last frame on screen and its timer stopped. Standby itself is never paused: what would
+pause it ends it.
+
+The wall is the exception to the last frame: while it must stand still it is taken down. A clock that has
+stopped still reads as the time, and so do readings.
+
+The rule is one function, `triggers.paused_monitors`, and one place applies it, `App._ambient_sync`: at start,
+after every refresh (also one that raised), when the lock watch sees the session's lock state change, at sleep
+and resume, when standby starts and ends, and at `eva-ctl ambient`. What stops the loops everywhere (a lock,
+sleep, standby, `ambient off`) asks Hyprland nothing and holds for monitors that come later. When Hyprland does
+not answer, the loops stay as they are and it is asked again every second.
 
 What keeps the cost down the rest of the time: the `[ambient] fps` cap; pictures and type are textures
 made once and only moved by the GPU, so no frame is rasterised on the CPU; the side wall and the
@@ -388,8 +470,17 @@ wallpaper does not, its cap drops, or it pauses on a workspace that windows cove
   track announced in the last two minutes is not announced again, and two cards are at least ten seconds
   apart: a track that comes sooner waits for the gap.
 - **Standby**: `sources/idle.py` writes `hypridle.conf` in the state directory (one listener:
-  `timeout`, `on-timeout = <path to eva-ctl> standby on`) and runs `hypridle -c` on it as a child, stopped
-  by its handle on quit.
+  `timeout`, `on-timeout = <path to eva-ctl> standby on`) and runs `hypridle -q -c` on it as a child, stopped
+  by its handle when the daemon quits and before it re-executes itself, so there are never two. A child left
+  by a daemon that died is found by the pid that daemon wrote beside the config, and ended only if that process
+  still runs on this config: never by name. There is no `on-resume`: the idle protocol resumes at one pixel of
+  pointer motion, and standby's own rule is eight.
+- **Critical notifications** are heard by `overlays.NotifyWatch`, which the EMERGENCY band used to do for
+  itself; the daemon makes it when the band or standby is on, and hands each one to the band and to standby.
+- **The lock watch** runs when wake, standby or an ambient loop needs it. The wake cover stays behind
+  `[motion] wake`.
+- **The wall**: `triggers.wall_monitor` names its monitor and `triggers.workspace_empty` says when it shows;
+  `App._wall_sync` applies both at every refresh.
 - The sampler and `NowPlaying` are created when the bar or any motion piece needs them, no longer only
   with the bar. The bars are still told only what their own switches ask for.
 
@@ -401,7 +492,8 @@ prompts and `tools/gen/prep_art.py` splits each picture into two JPEG layers, th
 glow and the eye glow alone on black. The split sets the generator's dark grey to true black and
 records each eye's centre. In `assets/motion/`: `profile_body.jpg`, `profile_eye.jpg`, `front_*.jpg`,
 `full_*.jpg` and `art.json` (`{name: {w, h, eyes}}`), about 0.3 MB together at their present size. Both layers go on with a
-screen blend, so the picture's black is the desk's ink.
+screen blend, so the picture's black is the desk's ink. A theme can bring its own in
+`assets/themes/<name>/motion/`. `prep_art.py` needs numpy, scipy and Pillow; running the desk does not.
 
 ## Configuration
 
@@ -479,13 +571,13 @@ at login; that the keyboard really stays with the new window during a launch. Ea
 | `eva_desk/app.py` | owns the player, the ambient layers and the triggers; `play`, `standby`, `ambient`, `lock` commands; shared sampler and now-playing |
 | `eva_desk/launcher.py` | Enter plays the launch through the app; Shift+Enter is the plain launch |
 | `eva_desk/overlays.py` | the power menu's LOCK goes through `App.lock()` |
-| `eva_desk/wallpaper.py` | main monitors are handed to the living wallpaper when it is on |
-| `eva_desk/mfd/widgets.py` | `spark()`, the sparkline |
+| `eva_desk/wallpaper.py` | main monitors are handed to the living wallpaper when it is on (`living`, `direct`, `forget`) |
+| `eva_desk/overlays.py` | `NotifyWatch`, the watch for critical notifications, out of `AlarmBand`; `_Overlay` takes the layer it sits on |
 | `eva_desk/config.py`, `config/eva.example.toml` | the three new sections |
 | `eva_desk/__main__.py`, `eva_desk/preview.py` | `--render-motion`; one frame per piece in `--render` |
 | `hypr/eva.lua` | the `no_anim` layer rule gains `motion`, `standby`, `wallpaper` and `wall` |
 | `bin/eva-ctl`, `README.md`, `install.sh`, `packaging/` | the commands, the features and settings, `assets/motion`, `hypridle` and `ffmpeg` as optional dependencies |
-| `CLAUDE.md` | the motion rule, reworded as in the decisions table |
+| `CLAUDE.md` | the motion rule, reworded as in the decisions table (the owner's own file: proposed to him, not edited by a plan) |
 | `2026-10-06-motion-redesign-design.md` | one line under "Launch sequence" pointing here |
 
 ## Build order
@@ -502,10 +594,15 @@ One plan each; each ends with offline renders and its list of live checks.
 
 ## Open items
 
-- The pictures are generated at 1792x768 and a main monitor shows them at nearly twice that. Plan 3
-  first tries generating the three chosen ones larger; if the GPU cannot, they are upscaled, and the
-  owner sees the result before it is final.
-- The cost of the living wallpaper is unknown until it runs. The limit is set under "Pause rules and
-  cost"; plan 4 ends with the owner's measurement and the default cap is fixed then.
+- The pictures are generated at 1792x768 and a main monitor shows them at nearly twice that. They ship
+  at that size: generating one again larger gives a different picture, which is no longer the one the owner
+  chose. One attempt at a larger take that keeps the picture (image to image, from the chosen one) is still
+  owed; it was not run when step 3 was built because the GPU was in use. The owner sees the result side by
+  side before anything changes.
+- The cost of the living wallpaper on the GPU is unknown until it runs: it repaints a whole monitor thirty
+  times a second under everything, and what is blurred over it (the bar, translucent windows) is blurred again
+  with every frame. Building a frame takes the daemon 0.6 ms. The limit is set under "Pause rules and cost";
+  the owner's measurement fixes the default cap. If it is too much: a lower `fps`, `drift = 0`, or pausing on
+  a workspace that windows cover.
 - The track card shows on the focused main monitor only. Whether the side wall should announce the
   track instead, when it is up, is left for after plan 5.
