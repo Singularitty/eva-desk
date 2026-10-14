@@ -26,9 +26,10 @@
 ---
 
 eva-desk is a daemon that runs next to Hyprland and draws the desk: a bar, a launcher, a screenshot tool,
-wallpapers, and Unit-01 standing behind your windows. The look comes from the show's title cards and
-computer screens: heavy mincho type, monospace readouts, purple and acid green on black, hazard stripes when
-something is wrong. Nothing animates for long. Every effect is a single cut or pulse, then the picture holds still.
+wallpapers that move, a standby screen, and Unit-01 standing behind your windows. The look comes from the
+show's title cards and computer screens: heavy mincho type, monospace readouts, purple and acid green on black,
+hazard stripes when something is wrong. When something happens it gets one short sequence, then the picture
+holds still. Only the wallpaper and the status wall keep moving, slowly, and they stop while a game is open.
 
 It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
 
@@ -68,11 +69,16 @@ window on a workspace opens, then stays still. `Super+D` docks a window into its
 <p align="center"><img src="docs/eva-launcher.png" alt="the launcher" width="100%"></p>
 
 **Launcher** (`Super+Space`). Type to search apps. The query is set large, matches are listed below it, the
-selected one gets a detail card on the right. Enter starts the entry and plays a two-second launch sequence
-over the desk while it opens: a title card with the app's name, or for a game a run up a launch shaft that
-ends at your desk. The sequence does not take the keyboard: what you type goes to the focused window, which is
-the new one as soon as it opens. A click skips the sequence. Shift+Enter launches without it; `launch = false`
-under `[motion]` turns it off.
+selected one gets a detail card on the right.
+
+<p align="center"><img src="docs/eva-launch.gif" alt="the two launch sequences: a title card for an app, then the launch shaft for a game" width="100%"></p>
+
+**Launch sequences.** Enter starts the entry and plays a two-second sequence over the desk while it opens: a
+title card with the app's name, or for a game a run up a launch shaft that ends at your desk. The sequence does
+not take the keyboard: what you type goes to the focused window, which is the new one as soon as it opens. A
+click skips the sequence. Shift+Enter launches without it; `launch = false` under `[motion]` turns it off.
+
+<p align="center"><img src="docs/eva-sequences.png" alt="boot, wake, berserk and the track card" width="100%"></p>
 
 **Sequences.** Four more short sequences play by themselves: a boot check when the desk first comes up in a
 session, a sync graph when the lock screen closes or the machine wakes from sleep, hazard strips on the edges
@@ -82,6 +88,8 @@ load warning and the track card keep away while a game is open, on a monitor tha
 and while the launcher, the power menu or Alt+Tab is up. Each has a switch under `[motion]` (`boot`, `wake`,
 `berserk`, `track`), and `track_corner` picks the card's corner. The track card needs `playerctl` and follows
 the players named in `[bar] music_players`; it shows at most once in ten seconds.
+
+<p align="center"><img src="docs/eva-standby.png" alt="the four shots of standby: the profile, the hexagon field, the whole figure, the face" width="100%"></p>
 
 **Standby.** After five minutes without input every monitor is covered by a slow loop: Unit-01 in the dark in
 three pictures, a field of hexagons, and the clock, with a cut every fifteen seconds. Any key, a click or
@@ -94,18 +102,23 @@ you try it. Standby keeps the screens lit: turning them off is still your idle t
 wait and `enabled = false` turns it off. A theme can bring its own pictures in
 `assets/themes/<name>/motion/`: the same seven files as `assets/motion/`, made with `tools/gen/prep_art.py`.
 
+<p align="center"><img src="docs/eva-wallpaper.gif" alt="the living wallpaper at real speed: the picture pushes in, a ring of hexagons spreads, specks rise" width="100%"></p>
+
 **Living wallpaper.** On the main monitors the daemon draws the workspace's wallpaper itself and moves it: the
 picture pushes in and back once every thirty seconds with a slow pan, a ring of hexagons spreads over it every
 few seconds, and small specks rise. A new wallpaper fades in over the old one. Under `[ambient]`, `drift` sets
 how far it pushes in (0 is a still picture), `lap` how long a push-in takes, and `ripples` and `embers` switch
 the other two; `wallpaper = false` hands the wallpaper back to `awww`. A wallpaper that is a colour stays a
 plain fill, and a picture the daemon cannot read goes to `awww` as before. Other monitors keep their `awww`
-wallpaper.
+wallpaper. (The picture above is one of standby's, standing in for a wallpaper of your own.)
+
+<p align="center"><img src="docs/eva-wall.png" alt="the status wall: the clock, CPU, memory and network with a minute of history, two waves, the workspaces, the playing track" width="100%"></p>
 
 **Status wall.** A monitor that is not a main one shows a wall of readouts while its workspace holds no
 window: the clock, CPU, memory and network each with a minute of history, the workspaces, and the playing
-track. Open a window there and it is gone. `wall_monitor` under `[ambient]` picks the monitor (its connector,
-or part of its description) and `wall = false` turns it off.
+track. Open a window there and it is gone. On a monitor that stands upright the screens are stacked in one
+column; on a wide one they flow into two or three. `wall_monitor` under `[ambient]` picks the monitor (its
+connector, or part of its description) and `wall = false` turns it off.
 
 The wallpaper repaints thirty times a second (`[ambient] fps`) and the wall fifteen. Both stop, with no timer
 running, while a game is open on any monitor, on a monitor that shows a fullscreen window, on a locked
@@ -147,8 +160,9 @@ to `~/Pictures/Screenshots`.
 
 And the rest, in short:
 
-- **Wallpapers**: one per workspace, shuffled from a pool of your own images. None are bundled; the show's
-  artwork is easy to find (wallhaven's "evangelion" tag has ultrawide and portrait pieces).
+- **Wallpapers**: one per workspace, shuffled from a pool of your own images, moving on the main monitors (see
+  Living wallpaper). None are bundled; the show's artwork is easy to find (wallhaven's "evangelion" tag has
+  ultrawide and portrait pieces).
 - **Windows**: square corners, a thin purple border, a hard purple shadow, bone corner brackets, the app name and
   workspace number as a tag, and a LOCK readout on the focused window. The border gradient no longer rotates
   (`border_speed = 100` under `[hyprland]` brings it back).
@@ -358,7 +372,8 @@ the focused window entirely; `sound = false` drops the sound panel.
 ```sh
 python3 -m unittest discover -s tests     # logic tests, no compositor needed
 eva-desk --render DIR                      # every scene, overlay, the bar and the launcher as PNGs
-eva-desk --render-motion DIR               # every motion sequence as a contact sheet and an mp4
+eva-desk --render-motion DIR               # every motion piece as a contact sheet and an mp4
+tools/record_gif.py && tools/record_motion.py   # the pictures in this README, from the same drawing code
 HL_VERIFY=1 Hyprland --verify-config -c ~/.config/hypr/hyprland.lua
 ```
 
