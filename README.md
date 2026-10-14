@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hero.png" alt="eva-desk on two monitors: a window over the moving wallpaper on the main one, the status wall on the side one" width="100%">
+  <img src="docs/readme/desk.png" alt="eva-desk on two monitors: a window over the moving wallpaper on the main one, the status wall on the side one" width="100%">
 </p>
 
 <h1 align="center">eva-desk</h1>
@@ -17,26 +17,24 @@
   <a href="#features">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#configuration">Configuration</a> ·
-  <a href="#other-apps">Other apps</a> ·
-  <a href="#lock-and-login">Lock and login</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
 ---
 
-eva-desk is a daemon that runs next to Hyprland and draws the desk: a bar, a launcher, a window switcher, a
-power menu, a screenshot tool, a wallpaper that moves, a status wall for a second monitor, and a standby screen
-for when you are away. The look comes from the show's title cards and computer screens: heavy mincho type,
-monospace readouts, purple and acid green on black, hazard stripes when something is wrong.
+eva-desk is a daemon that runs next to Hyprland and draws the desk in the style of the show's title cards and
+NERV screens: heavy mincho type, monospace readouts, purple and acid green on black, hazard stripes when
+something is wrong.
 
-When something happens (an app starts, the session unlocks, a new track plays) it gets one short sequence, then
-the picture holds still. Only the wallpaper and the status wall keep moving, slowly, and they stop while a game
-is open.
+It gives you a bar, a launcher, a window switcher, a power menu, a screenshot tool and a sound panel. The
+wallpaper moves, slowly. A second monitor shows a wall of readouts while it is empty. When you are away, a
+standby screen covers everything. When something happens (an app starts, the session unlocks, a new track
+plays), a short sequence plays and the picture holds still again.
 
-It needs Hyprland's Lua config (`hyprland.lua`). It does not work with the classic `hyprland.conf`.
+It needs Hyprland's Lua config (`hyprland.lua`), not the classic `hyprland.conf`.
 
-<p align="center"><img src="docs/demo.gif" alt="a tour: the launcher and the title card while the app opens, a workspace switch, Alt+Tab, a new track, a warning band, the power menu, maximise, the screenshot tool, standby" width="100%"></p>
+<p align="center"><img src="docs/readme/tour.gif" alt="a tour: the launcher and the title card while the app opens, a workspace switch, Alt+Tab, a new track, a warning band, the power menu, the screenshot tool, standby" width="100%"></p>
 
 ## Quick start
 
@@ -45,154 +43,147 @@ git clone https://github.com/Singularitty/eva-desk && cd eva-desk
 ./install.sh --extras all --lock --gtk
 ```
 
-Hyprland reloads and the daemon starts. Then:
+Hyprland reloads and the daemon starts.
 
 | key | |
 |---|---|
 | `Super+Space` | launcher |
-| `Super+Return` | maximise the window |
 | `Alt+Tab` | window switcher |
 | `Super+M` | power menu |
 | `Print` | screenshot |
+| `Super+Return` | maximise the window |
 
-Everything is in `~/.config/eva-desk/eva.toml`; `eva-ctl apply` after editing. `./uninstall.sh` puts things back.
-Every picture in this README is drawn by eva-desk's own drawing code, not taken from a screen
-(`tools/record_gif.py`, `tools/record_motion.py`).
+The settings are in `~/.config/eva-desk/eva.toml`; run `eva-ctl apply` after editing. `./uninstall.sh` puts
+everything back.
 
 ## Features
 
-### Motion
+### Launch
 
-<p align="center"><img src="docs/eva-launch.gif" alt="the two launch sequences: a title card for an app, then the launch shaft for a game" width="100%"></p>
+<p align="center"><img src="docs/readme/launch.gif" alt="the two launch sequences: a title card for an app, then the launch shaft for a game" width="100%"></p>
 
-**Launch.** Enter in the launcher plays a two-second sequence over the desk while the app opens: a title card
-with its name, or for a game a run up a launch shaft that ends at your desk. It does not take the keyboard:
-what you type goes to the new window as soon as it opens. A click skips it, Shift+Enter launches without it.
+Enter in the launcher plays a two-second sequence while the app opens: a title card with its name, or for a
+game a run up a launch shaft. It does not take the keyboard, so what you type goes to the new window as soon
+as it is there. A click skips it; Shift+Enter launches without it.
 
-<p align="center"><img src="docs/eva-sequences.png" alt="boot, wake, berserk and the track card" width="100%"></p>
+### Sequences
 
-**Sequences.** Four more play by themselves: a boot check when the desk first comes up in a session, a sync
-graph when the lock screen closes or the machine wakes from sleep, hazard strips on the edges of the screen
-when the CPU or memory has been pegged for a while, and a small card in a corner when a new track starts
-playing (`playerctl`, at most one card in ten seconds). None of them takes the keyboard, and a click skips the
-two that cover the screen. The load warning and the track card keep away from games, fullscreen windows and
-open menus.
+<p align="center"><img src="docs/readme/sequences.png" alt="boot, wake, berserk and the track card" width="100%"></p>
 
-<p align="center"><img src="docs/eva-standby.png" alt="the four shots of standby: the profile, the hexagon field, the whole figure, the face" width="100%"></p>
+Four more play by themselves: a boot check when the desk first comes up, a sync graph when the session
+unlocks or the machine wakes, hazard strips on the screen's edges when the CPU or memory stays pegged, and a
+card in a corner when a new track starts playing. The last two never cover anything and keep away from games
+and fullscreen windows.
 
-**Standby.** After five minutes without input every monitor is covered by a slow loop: Unit-01 in the dark in
-three pictures and a field of hexagons, a cut every fifteen seconds, the clock and the readings in the
-letterbox. Any key, a click or moving the mouse folds it away, and that key or click does not reach the window
-underneath. It never starts over a fullscreen window, while a game is open or on a locked session, and it goes
-when the session locks, the machine sleeps or a critical notification arrives.
-The daemon runs `hypridle` to count the minutes, so a video or a call that holds an idle inhibitor keeps it
-away; without `hypridle`, or with `idle = "none"`, it starts when something runs `eva-ctl standby on`.
-Standby keeps the screens lit: turning them off is still your idle tool's job.
+### Standby
 
-<p align="center"><img src="docs/eva-wallpaper.gif" alt="the living wallpaper at real speed: the picture pushes in, a ring of hexagons spreads, specks rise" width="100%"></p>
+<p align="center"><img src="docs/readme/standby.png" alt="the four shots of standby: the profile, the hexagon field, the whole figure, the face" width="100%"></p>
 
-**Living wallpaper.** On the main monitors the daemon draws the workspace's wallpaper itself and moves it: the
-picture pushes in and back once every thirty seconds with a slow pan, a ring of hexagons spreads over it every
-few seconds, and small specks rise. A new wallpaper fades in over the old one. A colour stays a plain fill, and
-a picture the daemon cannot read goes to `awww` as before. (The wallpaper in these pictures is one of standby's,
-standing in for one of your own.)
+After five idle minutes every monitor shows a slow loop: Unit-01 in the dark, a field of hexagons, the clock,
+a cut every fifteen seconds. Any key, a click or moving the mouse folds it away, and that key or click is not
+passed on. It does not start over a fullscreen window, while a game is open, or while a video holds the
+screen awake; it ends when the session locks or a critical notification arrives. The minutes are counted by
+`hypridle`, which the daemon runs. `eva-ctl standby on` shows it now.
 
-<p align="center"><img src="docs/eva-wall.png" alt="the status wall: the clock, CPU, memory and network with a minute of history, two waves, the workspaces, the playing track" width="100%"></p>
+### Moving wallpaper
 
-**Status wall.** A monitor that is not a main one shows a wall of readouts while its workspace holds no
-window: the clock, CPU, memory and network each with a minute of history, the workspaces, and the playing
-track. Open a window there and it is gone. On a monitor that stands upright the screens are stacked in one
-column, as on the right of the picture at the top; on a wide one they flow into two or three.
+<p align="center"><img src="docs/readme/wallpaper.gif" alt="the moving wallpaper at real speed: the picture pushes in, a ring of hexagons spreads, specks rise" width="100%"></p>
 
-The wallpaper and the wall stop, with no timer running, while a game is open on any monitor, on a monitor that
-shows a fullscreen window, on a locked session and under standby. The wallpaper keeps its last frame; the wall
-is taken down, since a clock that has stopped still reads as the time. `eva-ctl ambient off` stops both by hand.
+On the main monitors the daemon draws the wallpaper itself: it pushes in and back over thirty seconds with a
+slow pan, a ring of hexagons spreads across it now and then, and small specks rise. A new wallpaper fades in
+over the old one. The wallpapers are your own; the one above is a stand-in.
 
-Each of these has its own switch: `[motion]` for the sequences, `[standby]`, and `[ambient]` for the wallpaper
-and the wall.
+### Status wall
 
-### The desk
+<p align="center"><img src="docs/readme/wall.png" alt="the status wall: the clock, CPU, memory and network with a minute of history, two waves, the workspaces, the playing track" width="100%"></p>
 
-<p align="center"><img src="docs/eva-launcher.png" alt="the launcher" width="100%"></p>
+A monitor that is not a main one shows the time, CPU, memory and network with a minute of history, the
+workspaces and the playing track, while its workspace holds no window. Upright monitors get one column, as
+in the picture at the top; wide ones get two or three.
 
-**Launcher** (`Super+Space`). Type to search apps. The query is set large, matches are listed below it, the
-selected one gets a detail card on the right.
+The wallpaper and the wall stop moving while a game is open, on a monitor with a fullscreen window, on a
+locked session and under standby, and `eva-ctl ambient off` stops them by hand.
 
-<p align="center"><img src="docs/eva-bar.png" alt="the bar, calm and in EMERGENCY" width="100%"></p>
+### Launcher
 
-**Bar.** Workspace tags, window title, clock, tray, now playing, CPU / RAM / network, date, volume. When a
-workspace is urgent or the CPU is pegged it gets an orange warning strip (second row). A critical notification
-drops an EMERGENCY band under it.
+<p align="center"><img src="docs/readme/launcher.png" alt="the launcher" width="100%"></p>
 
-<p align="center"><img src="docs/eva-alttab.png" alt="Alt+Tab" width="100%"></p>
+`Super+Space`. Type to search apps; the query is set large, matches are listed under it, and the selected
+one gets a card with what it is and how often you opened it. Anything that is not an app is a web search.
 
-**Alt+Tab.** Window switcher. One card per window, most recent first, with the workspace number. Release Alt to jump.
+### Bar
 
-<p align="center"><img src="docs/eva-power.png" alt="the power menu" width="100%"></p>
+<p align="center"><img src="docs/readme/bar.png" alt="the bar, calm and under load" width="100%"></p>
 
-**Power menu** (`Super+M`). Lock, sleep, log out, reboot, shut down. Shutting down and logging out ask twice.
+Workspaces, the window title, the playing track, CPU, memory and network, the date, volume and the tray.
+An urgent workspace and a pegged CPU turn orange. A critical notification drops a warning band under the bar.
 
-<p align="center"><img src="docs/eva-eyecatch.png" alt="the workspace card" width="100%"></p>
+### Alt+Tab
 
-**Workspace switch.** A card with the workspace number shows for a moment, then fades.
+<p align="center"><img src="docs/readme/alttab.png" alt="Alt+Tab" width="100%"></p>
 
-<p align="center"><img src="docs/eva-shot.png" alt="the screenshot tool" width="100%"></p>
+One card per window, most recent first, with its workspace. Release Alt to go there.
 
-**Screenshots** (`Print`). The screen freezes, you pick a region or a window, it goes to the clipboard and
-to `~/Pictures/Screenshots`.
+### Power menu
 
-**Sound** (click `VOL` on the bar, or `eva-ctl panel sound`). Outputs, inputs, app streams and recordings on
-four screens with level bars; arrows move and set, `m` mutes, `d` makes a device the default, Enter moves a
-stream to another device, `1 2 3` toggle do-not-disturb, night light and the power profile. While open it holds
-the keyboard; Esc or a click outside it closes it, and so does opening the launcher, the power menu or Alt+Tab.
-Night light starts `wlsunset` with no location; to give it one (or any other `wlsunset` arguments), set
+<p align="center"><img src="docs/readme/power.png" alt="the power menu" width="100%"></p>
+
+`Super+M`. Lock, sleep, log out, reboot, shut down. Logging out and shutting down ask twice.
+
+### Workspace card
+
+<p align="center"><img src="docs/readme/workspace.png" alt="the workspace card" width="100%"></p>
+
+A card with the workspace number, and its name if you give it one, shows for a moment when you switch.
+
+### Screenshots
+
+<p align="center"><img src="docs/readme/screenshot.png" alt="the screenshot tool" width="100%"></p>
+
+`Print`. The screen freezes; drag a region, click a window, or press `F` for the whole screen. The shot goes
+to the clipboard and to `~/Pictures/Screenshots`. Hold Shift as you finish to open it in an editor.
+
+### Sound
+
+<p align="center"><img src="docs/readme/sound.png" alt="the sound panel" width="100%"></p>
+
+Click `VOL` on the bar. Outputs, inputs, app streams and recordings with their levels: arrows move and set,
+`m` mutes, `d` makes a device the default, Enter moves a stream to another device, and `1 2 3` toggle
+do-not-disturb, night light and the power profile. Night light runs `wlsunset`; give it a location with
 `EVA_NIGHT_ARGS` in the daemon's environment, e.g. `env = EVA_NIGHT_ARGS,-l 39.9 -L 116.3` in your Hyprland config.
 
-<p align="center"><img src="docs/eva-lock.png" alt="the lock screen" width="100%"></p>
+### Lock screen
 
-**Lock screen** for hyprlock, one background per monitor, rendered at its size; and a **login screen** for
-greetd with ReGreet. See [Lock and login](#lock-and-login).
+<p align="center"><img src="docs/readme/lock.png" alt="the lock screen" width="100%"></p>
 
-### Unit-01 behind your windows
-
-<p align="center"><img src="docs/eva-stage.png" alt="Unit-01 on the stage" width="100%"></p>
-
-**The figure.** Unit-01 stands to the right of your windows, on a hexagon field, in a column the windows leave
-free. It appears when the first window on a workspace opens, then stays still, and turns orange while the
-machine is under heavy load. `Super+D` docks a window into its space. It is on by default; `eva-ctl figure off`
-hides it and gives the column back to the windows, and `figure = 0` under `[figures]` removes it.
-
-<p align="center"><img src="docs/eva-herald.png" alt="maximised window backdrop" width="100%"></p>
-
-**Maximise.** `Super+Return` fills the screen with the window, and a large Unit-01 fades in behind it.
-`herald = false` under `[figures]` keeps the plain maximise.
+A hyprlock setup with a background for each monitor (`./install.sh --lock`). When the session unlocks, the
+wake sequence plays. There is also a matching login screen for greetd with ReGreet:
+`sudo greeter/install-greeter.sh` installs it, keeping backups.
 
 ### And the rest
 
-- **Wallpapers**: one per workspace, shuffled from a pool of your own images. None are bundled; the show's
-  artwork is easy to find (wallhaven's "evangelion" tag has ultrawide and portrait pieces).
-- **Windows**: square corners, a thin purple border, a hard purple shadow, bone corner brackets, the app name and
-  workspace number as a tag, and a LOCK readout on the focused window. The border gradient does not rotate
-  (`border_speed = 100` under `[hyprland]` brings that back).
-- **Small things**: a new window gets one hexagon pulse. The clock digits slide at the minute.
+- **Windows**: square corners, a purple border and hard shadow, corner brackets, the app and workspace as a
+  tag, and a LOCK readout on the focused window. A new window gets one hexagon pulse.
+- **Unit-01 behind your windows**: a figure in a column to the right of the windows, and a large one behind a
+  maximised window. It is on by default. `eva-ctl figure off` hides the figure and gives its column back;
+  `Super+D` docks a window into that column while it is there.
+- **Other apps**: `eva-extras` themes kitty, starship, Neovim and the shell to match.
 
-Your own keybinds are left alone. eva-desk adds `Super+Return` and `Super+D`, and takes over your launcher key,
-`Print`, `Alt+Tab` and `Super+M`. All of them can be changed or turned off.
+Your own keybinds are left alone. eva-desk adds `Super+Return` and `Super+D`, and takes over your launcher
+key, `Print`, `Alt+Tab` and `Super+M`; each can be changed or turned off.
 
 ## Install
 
 ### Arch
-
-There is a PKGBUILD in `packaging/`, so the whole thing can be a pacman package:
 
 ```sh
 cd packaging && makepkg -si
 eva-desk-setup --extras all --lock --gtk
 ```
 
-The package puts the program in `/usr/share/eva-desk` and the fonts in `/usr/share/fonts/eva-desk`.
-`eva-desk-setup` does the per-user part: it writes `~/.config/eva-desk/eva.toml` and adds the `dofile` line to
-your `hyprland.lua`. It takes the same `--theme`, `--extras`, `--lock` and `--gtk` flags as the script below.
+The package installs the program to `/usr/share/eva-desk` and the fonts to `/usr/share/fonts/eva-desk`.
+`eva-desk-setup` does the per-user part: it writes `~/.config/eva-desk/eva.toml` and adds one line to your
+`hyprland.lua`.
 
 ### Any distribution
 
@@ -202,44 +193,38 @@ cd eva-desk
 ./install.sh --extras all --lock --gtk
 ```
 
-This copies the program to `~/.local/share/eva-desk`, links `eva-desk`, `eva-ctl` and `eva-extras` into
-`~/.local/bin`, downloads the fonts to `~/.local/share/fonts/eva-desk`, writes `~/.config/eva-desk/eva.toml`
-and adds one line at the end of `~/.config/hypr/hyprland.lua` (a backup is kept):
+This copies the program to `~/.local/share/eva-desk`, puts `eva-desk`, `eva-ctl` and `eva-extras` in
+`~/.local/bin`, downloads the fonts, writes `~/.config/eva-desk/eva.toml`, and adds this line to the end of
+`~/.config/hypr/hyprland.lua` (keeping a backup):
 
 ```lua
 dofile(os.getenv("HOME") .. "/.local/share/eva-desk/hypr/eva.lua")
 ```
 
-Hyprland picks the change up on its own and the daemon starts. If you already run a bar, a wallpaper script or
-an idle tool, turn them off, or turn eva-desk's off with `[bar] enabled = false`, `[wallpapers] enabled = false`
-and `[standby] idle = "none"`.
+If you already run a bar, a wallpaper tool or an idle tool, stop them, or turn eva-desk's off:
+`[bar] enabled = false`, `[wallpapers] enabled = false`, `[standby] idle = "none"`.
 
 | flag | |
 |---|---|
-| `--extras all` | also theme kitty, starship, Neovim and the shell. A list works too: `--extras kitty,starship` |
+| `--extras all` | also theme kitty, starship, Neovim and the shell; or a list: `--extras kitty,starship` |
 | `--lock` | set up hyprlock: a background per monitor and a `hyprlock.conf` |
-| `--gtk` | build the GTK 3 / 4 theme and icon theme. Thunar gets its own stylesheet. Needs an Everforest GTK theme installed to recolour |
-| `--link` | run from the git checkout instead of a copy, handy for hacking on it |
-| `--no-hypr` | do not touch `hyprland.lua` |
+| `--gtk` | build the GTK 3 / 4 and icon themes (recoloured from an installed Everforest theme) |
+| `--link` | run from the git checkout instead of a copy |
+| `--no-hypr` | leave `hyprland.lua` alone |
 | `--no-fonts` | skip the font download |
 
 ### Dependencies
 
-Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4, gtk4-layer-shell.
+Hyprland 0.56 or newer with the Lua config, Python 3.11+, PyGObject, pycairo, GTK 4 and gtk4-layer-shell.
 
-Optional: `awww` or `swww` for wallpapers on monitors that are not main ones (and as a fallback), `wpctl` for
-volume, `playerctl` for now playing and the track card, `grim` and `wl-copy` for screenshots, `hyprlock` for the
-lock screen, `hypridle` for standby after some idle minutes, Pillow for rendering the lock and login
-backgrounds, `ffmpeg` for mp4 previews of the motion pieces (`eva-desk --render-motion`).
-The sound panel reads and sets audio with `pactl` (libpulse) and `gojq`, finds app icons with `geticons`;
-its quick toggles use `dunstctl` (dunst, do-not-disturb), `wlsunset` (night light) and `powerprofilesctl`
-(power-profiles-daemon). Without `pactl` or `gojq` the panel shows NO SIGNAL; a missing toggle tool only
-disables that toggle.
-The fonts (Shippori Mincho B1, Share Tech Mono, Rubik, Doto) are downloaded by the installer.
+Optional, each for one thing: `hypridle` (standby), `playerctl` (the playing track), `awww` or `swww`
+(wallpapers on the other monitors), `wpctl` (volume), `grim` and `wl-copy` (screenshots), `hyprlock` (the lock
+screen), `pactl` and `gojq` (the sound panel), Pillow (the lock and login backgrounds), `ffmpeg` (video
+previews of the motion). The fonts are downloaded by the installer.
 
 ```sh
 # Arch
-sudo pacman -S --needed python-gobject python-cairo gtk4 gtk4-layer-shell awww grim wl-clipboard playerctl hyprlock hypridle
+sudo pacman -S --needed python-gobject python-cairo gtk4 gtk4-layer-shell hypridle playerctl awww grim wl-clipboard hyprlock
 # Debian / Ubuntu
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-gtk4layershell-1.0
 # Fedora
@@ -248,176 +233,84 @@ sudo dnf install python3-gobject python3-cairo gtk4 gtk4-layer-shell
 
 ### Monitors
 
-Everything is sized from the monitor it is drawn on, so 16:9, 16:10, ultrawide, HiDPI and portrait screens
-all work, and so do several monitors at once.
-
-- `[general] main_monitors` lists the monitors that get the bar, the figure and the moving wallpaper, by output
-  name or a part of the description. Leave it empty to use the largest one.
-- The other monitors get a still wallpaper through `awww`, and one of them the status wall while its workspace
-  is empty: the first that is not a main one, or the one `[ambient] wall_monitor` names.
-- The space kept free for the figure defaults to `"auto"`: 30 % of the width on ultrawides, 24 % on 16:9
-  and 16:10, 20 % on squarer screens. Put a number there to override it.
-- Wallpapers can be any size; they are centre-cropped to the monitor.
-- Lock screen backgrounds are rendered per monitor. Run `tools/hyprlock_setup.py` again if you change your setup.
+Everything is sized from the monitor it is drawn on: 16:9, 16:10, ultrawide, HiDPI and portrait all work.
+`[general] main_monitors` names the monitors that get the bar and the moving wallpaper (by output name or part
+of the description); empty means the largest one. The others keep a still wallpaper (`[wallpapers] static`),
+and the first of them gets the status wall (`[ambient] wall_monitor` picks another).
 
 ## Configuration
 
-Everything lives in `~/.config/eva-desk/eva.toml`. [`config/eva.example.toml`](config/eva.example.toml) lists
-every option with its default. After editing, run `eva-ctl apply`.
-
-```sh
-eva-ctl play card FIREFOX      # try a sequence: card, shaft, boot, wake, berserk or track
-eva-ctl standby [on|off]       # standby, now
-eva-ctl ambient [on|off]       # stop or start the moving wallpaper and the status wall
-eva-ctl lock                   # start the lock screen
-eva-ctl eyecatch 3 PROJECTS    # try the workspace card
-eva-ctl alarm "text"           # try the EMERGENCY band
-eva-ctl alttab                 # the window switcher
-eva-ctl power                  # the power menu
-eva-ctl panel sound|close      # the sound panel, or close whichever panel is open
-eva-ctl figure toggle          # the figure and its space
-eva-ctl impact figure          # replay the figure's entrance
-eva-ctl herald                 # replay the maximise backdrop
-eva-ctl status | reload | quit
-```
-
-The sections you will probably touch:
+Everything is in `~/.config/eva-desk/eva.toml`; [`config/eva.example.toml`](config/eva.example.toml) lists
+every option with its default. Run `eva-ctl apply` after editing.
 
 | section | |
 |---|---|
-| `[motion]` | a switch for each sequence: `launch`, `boot`, `wake`, `berserk`, `track`, and the track card's corner |
-| `[standby]` | `enabled`, the idle `minutes`, and what counts them (`idle = "hypridle"` or `"none"`) |
-| `[ambient]` | the moving wallpaper (`wallpaper`, `drift`, `lap`, `ripples`, `embers`), the status wall (`wall`, `wall_monitor`) and their frame rate (`fps`) |
-| `[wallpapers]` | the pool, a fixed wallpaper per workspace, named workspaces, other monitors |
-| `[bar]` | height, number of tags, the readouts, now playing, tray, what clicks do, extra buttons |
-| `[overlays]` | the workspace card, the EMERGENCY band, Alt+Tab, the power menu, the pulses, the berserk threshold, and switches for the window frame and the sound panel |
-| `[figures]` | which workspaces get the figure, how much space it takes, the maximise backdrop, window classes that are games |
-| `[frame]` | which pieces of the window frame draw: the corner brackets, the app/workspace tag, the LOCK readout |
-| `[power]` | the commands behind lock / sleep / log out / reboot / shut down |
-| `[hyprland]` | the keybinds, gaps, border style and speed |
+| `[motion]` | a switch for each sequence: `launch`, `boot`, `wake`, `berserk`, `track` |
+| `[standby]` | `enabled`, the idle `minutes`, and `idle = "hypridle"` or `"none"` |
+| `[ambient]` | the moving wallpaper (`wallpaper`, `drift`, `lap`, `ripples`, `embers`), the status wall (`wall`, `wall_monitor`), and `fps` |
+| `[wallpapers]` | your pool, a wallpaper per workspace, named workspaces, other monitors |
+| `[bar]` | height, workspaces, readouts, now playing, tray, click actions, extra buttons |
+| `[overlays]` | the workspace card, the warning band, Alt+Tab, the power menu, the pulse, the load limit, the window frame, the sound panel |
+| `[figures]` | the figure, the maximise backdrop, and the window classes that are games |
+| `[power]` | the commands behind lock, sleep, log out, reboot and shut down |
+| `[hyprland]` | keybinds, gaps, borders |
 
-### Colours and fonts
+```sh
+eva-ctl standby on             # standby, now
+eva-ctl ambient off            # stop the moving wallpaper and the wall (on starts them)
+eva-ctl play card FIREFOX      # try a sequence: card, shaft, boot, wake, berserk, track
+eva-ctl lock                   # lock the screen
+eva-ctl figure off             # hide the figure
+eva-ctl status | reload | quit
+```
 
-The palette and fonts are defined once, by role, in `eva_desk/themes.py`. Everything else reads from
-there, including the GTK theme generator, the eww palette file and the app themes below. If you want a
-different colour scheme, copy the `eva` entry, change the values, put your own figure, standby pictures and
-wallpapers in `assets/themes/<name>/`, and switch with `eva-ctl theme <name>`. Files you list under
-`[theme] retheme_files` are rewritten colour by colour on a switch.
-
-The figure and the standby pictures were generated locally with stable-diffusion.cpp. The scripts are in
-`tools/gen/` if you want to make your own: `sil.py` cuts a silhouette, `rig.py` builds the arm rig for the
-maximise figure, `build_theme_assets.py` packs it all; `gen_rim.py` has the prompts of the standby pictures and
-`prep_art.py` splits one into the two layers standby draws (the picture, and the glow of its eyes).
-
-## Other apps
-
-`eva-extras install kitty starship nvim shell`, or `all`, writes matching themes for:
-
-| | what | needs |
-|---|---|---|
-| kitty | colours and a tab bar with numbered title blocks | `include ./eva.conf` and `tab_bar_style custom` in kitty.conf |
-| starship | a prompt in the same style: git branch, command time, clock, and a warning block after a failed command | starship |
-| nvim | colorscheme, status line, tab colours and dashboard | AstroNvim with heirline and snacks, or just the colorscheme |
-| shell | zsh highlighting colours and a vivid theme for `ls` | source the file from `.zshrc` |
-
-Every file it writes gets a backup next to it.
-
-## Lock and login
-
-**hyprlock.** `./install.sh --lock` (or `tools/hyprlock_setup.py`) renders a background for each monitor and
-writes `~/.config/hypr/hyprlock.conf`. Your old file is backed up. The power menu's LOCK runs `hyprlock`.
-
-The wake sequence follows any lock screen, however it was started: the daemon asks Hyprland whether the
-session is locked, puts the sequence's first frame under the lock screen, and plays it when the session
-unlocks. It never starts, stops or waits on the locker itself. `eva-ctl lock` runs the `[power] lock`
-command, which is what the power menu does; it also works when the daemon is not running.
-
-**ReGreet.** `tools/login_screen.py` renders the background and `greeter/regreet.css` styles the form.
-`sudo greeter/install-greeter.sh` copies both into `/etc/greetd` and `/usr/share/backgrounds`, with backups.
-
-<p align="center"><img src="docs/eva-login.png" alt="the login screen" width="100%"></p>
-
-## Resource use
-
-Measured on the daemon at idle with a 3440x1440 main monitor, with the moving wallpaper and the status wall off:
-
-| | |
-|---|---|
-| CPU, idle | about 0.4 % of one core (the bar's readouts refresh every 2 s; nothing else runs between events) |
-| CPU, during an effect | a short spike while a texture renders, then back to idle. Animations run on the GPU through GTK |
-| RAM | about 270 MB resident: GTK, the fonts, and the figure's backdrop kept ready at your monitor's size. Overlays and the launcher render when they open and are dropped when they close |
-| GPU memory | about 100 MB at rest; a full-screen effect adds one texture while it is on screen |
-| Disk | 9 MB for the program and pictures, plus 30 MB of fonts |
-
-The daemon is a single Python process. It wakes up on Hyprland events (workspace, window, focus), on the
-readout timer, and every two seconds to ask Hyprland whether the session is locked (twice a second while it
-is).
-
-The moving wallpaper repaints thirty times a second and the status wall fifteen while they are visible. That
-costs some CPU in the daemon (building a frame takes it under a millisecond) and keeps the GPU compositing,
-more so with blur behind the bar or behind windows, since what is blurred changes with every frame. If it is
-too much on your machine, lower `[ambient] fps`, set `drift = 0`, or turn `wallpaper` off. Both stop by
-themselves while a game is open.
+Colours and fonts are defined once, by role, in `eva_desk/themes.py`; the GTK theme, the app themes and the
+eww palette all read from there. A theme of your own is a copy of the `eva` entry plus its pictures in
+`assets/themes/<name>/`, switched to with `eva-ctl theme <name>`.
 
 ## FAQ
 
-**Can I use it with `hyprland.conf`?** No. The border styles, workspace rules and binds are done through
-Hyprland's Lua config.
+**It moves too much.** `eva-ctl ambient off` stops the wallpaper and the wall; `wallpaper = false` and
+`wall = false` under `[ambient]` turn them off for good. `[motion]` has a switch for each sequence,
+`[standby] enabled = false` turns standby off, and `[overlays]` has one for each small effect.
 
-**Something looks wrong on my screen.** `eva-desk --render /tmp/eva` writes PNGs of exactly what the daemon
-draws, and `eva-desk --render-motion /tmp/eva` the motion pieces. If those look right, the problem is in
-Hyprland; if not, open an issue with the PNG. The log is at `~/.local/state/eva-desk/eva-desk.log`.
+**Does it cost my games anything?** While a window whose class is in `[figures] ignore_classes` is open, the
+wallpaper and the wall stand still and standby does not start. Steam games and gamescope are in the list.
+The rest of the time the moving wallpaper keeps the GPU compositing; if that shows, lower `[ambient] fps` or
+set `drift = 0`.
 
-**Too much movement.** `eva-ctl ambient off` stops the wallpaper and the wall now; `wallpaper = false` and
-`wall = false` under `[ambient]` for good. `[motion]` has a switch for each sequence, `[standby] enabled = false`
-turns standby off, and `[overlays]` has a switch for each of the smaller effects: `eyecatch = false` drops the
-workspace card (`eyecatch_style = "cut"` is a louder one), `berserk = 0` stops the reaction to load, and
-`frame = false` drops the brackets, tag and LOCK readout around the focused window.
+**Standby came up during a video.** Players that keep the screen awake keep it away; for one that does not,
+raise `[standby] minutes`.
 
-**Standby came up while I was watching something.** Players that hold an idle inhibitor keep it away; for one
-that does not, raise `[standby] minutes`. It never starts over a fullscreen window.
+**Something looks wrong.** `eva-desk --render /tmp/eva` writes PNGs of exactly what the daemon draws, and
+`eva-desk --render-motion /tmp/eva` the motion. If they look right, the problem is on the Hyprland side; if
+not, open an issue with the picture. The log is `~/.local/state/eva-desk/eva-desk.log`.
 
-**The figure takes too much room.** `eva-ctl figure off` hides it. `figure = 0` under `[figures]` removes it, and
-`stage = 0.2` makes it narrower.
+**Can I use it with `hyprland.conf`?** No: the borders, workspace rules and binds come from the Lua config.
 
-**My game is on the figure's workspace.** Games are known by their window class: the classes in
-`[figures] ignore_classes` never get a figure, an eye-catch or a pulse, and while one is open the wallpaper and
-the wall stand still and standby does not start.
-
-**Uninstall.** `./uninstall.sh`. Add `--purge` to also delete the config and fonts.
+**How do I remove it?** `./uninstall.sh`; `--purge` also deletes the settings and the fonts.
 
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests     # logic tests, no compositor needed
-eva-desk --render DIR                      # every scene, overlay, the bar and the launcher as PNGs
+python3 -m unittest discover -s tests     # the tests, no compositor needed
+eva-desk --render DIR                      # every overlay, the bar and the launcher as PNGs
 eva-desk --render-motion DIR               # every motion piece as a contact sheet and an mp4
-tools/record_gif.py && tools/record_motion.py   # the pictures in this README, from the same drawing code
-HL_VERIFY=1 Hyprland --verify-config -c ~/.config/hypr/hyprland.lua
+tools/record_readme.py                     # every picture in this README
 ```
 
-Python, GTK 4 and gtk4-layer-shell. Drawing is cairo; motion is built as GTK snapshots and drawn by the GPU.
+Python, GTK 4 and gtk4-layer-shell. Nothing in this README was captured from a screen: the pictures come from
+the same drawing code the daemon uses, with made-up windows and readings.
 
 ## Contributing
 
-Issues and pull requests are welcome. Some things that would help:
-
-- **Screenshots of your setup.** Open a discussion or an issue with a picture; other monitors and other
-  wallpapers show what the theme can do better than mine can.
-- **Other figures and palettes.** A theme is one entry in `eva_desk/themes.py` plus a figure cutout, standby
-  pictures and wallpapers in `assets/themes/<name>/`. Unit-02, Unit-00, or something that is not Evangelion at all.
-- **A `hyprland.conf` port.** The Lua hook does border styles, workspace rules and binds; most of it could be
-  generated as classic config too.
-- **Packages** for other distributions. The Arch PKGBUILD in `packaging/` shows what goes where.
-
-Before sending code, run the tests and `eva-desk --render DIR` and look at the PNGs.
+Issues and pull requests are welcome, especially pictures of your own setup, themes for other Evas (or
+anything else), a `hyprland.conf` port, and packages for other distributions. Before sending code, run the
+tests and look at the output of `eva-desk --render`.
 
 ## Credits
 
-Fonts from Google Fonts: Shippori Mincho B1, Share Tech Mono, Rubik, Doto (OFL). The GTK and icon
-themes are recoloured copies of the Everforest GTK theme and the Everforest (Suru++) icon theme.
-The figure and the standby pictures were generated with stable-diffusion.cpp and Z-Image-Turbo.
+Fonts: Shippori Mincho B1, Share Tech Mono, Rubik and Doto from Google Fonts (OFL). The GTK and icon themes are
+recoloured from Everforest. The pictures of Unit-01 were generated locally with stable-diffusion.cpp.
 
-Neon Genesis Evangelion belongs to Hideaki Anno, Gainax and Khara. This is a fan project.
-
-MIT licence.
+Neon Genesis Evangelion belongs to Hideaki Anno, Gainax and Khara. This is a fan project. MIT licence.
