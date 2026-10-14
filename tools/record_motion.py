@@ -74,10 +74,10 @@ def grid(path, cells, cols=2):
     print(f"{path.relative_to(ROOT)}: {out.size[0]}x{out.size[1]}, {path.stat().st_size // 1024} KB")
 
 
-def stand_in():
-    """One of standby's pictures, its two layers put back together, as a wallpaper for the demo."""
-    body = Image.open(ROOT / "assets/motion/profile_body.jpg").convert("RGB")
-    eye = Image.open(ROOT / "assets/motion/profile_eye.jpg").convert("RGB")
+def stand_in(name="profile"):
+    """One of standby's pictures, its two layers put back together, as a wallpaper for the demo: (picture, texture)."""
+    body = Image.open(ROOT / f"assets/motion/{name}_body.jpg").convert("RGB")
+    eye = Image.open(ROOT / f"assets/motion/{name}_eye.jpg").convert("RGB")
     picture = ImageChops.screen(body, eye)
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         picture.save(f.name)
